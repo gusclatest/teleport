@@ -240,7 +240,19 @@ export type PluginOktaSpec = {
    * the Okta org's base URL
    */
   orgUrl: string;
+
+  enableUserSync?: boolean;
+  enableAccessListSync?: boolean;
+  enableAppGroupSync?: boolean;
+
+  credentialsInfo?: CredentialsInfo;
 };
+
+export type CredentialsInfo = {
+  hasSSMSToken?: boolean
+  hasOauthCredentials?: boolean
+  hasSCIMToken?: boolean
+}
 
 export type PluginSlackSpec = {
   fallbackChannel: string;
