@@ -51,6 +51,7 @@ import (
 	awssession "github.com/aws/aws-sdk-go/aws/session"
 	"github.com/google/renameio/v2"
 	"github.com/google/uuid"
+	"github.com/grafana/pyroscope-go"
 	"github.com/gravitational/roundtrip"
 	"github.com/gravitational/trace"
 	"github.com/jonboulle/clockwork"
@@ -1301,6 +1302,40 @@ func NewTeleport(cfg *servicecfg.Config) (*TeleportProcess, error) {
 	if cfg.Tracing.Enabled {
 		if err := process.initTracingService(); err != nil {
 			return nil, trace.Wrap(err)
+		}
+	}
+
+	if address := os.Getenv("PYROSCOPE_SERVER_ADDRESS"); address != "" {
+		hostname, err := os.Hostname()
+		if err != nil {
+			hostname = "unknown"
+		}
+
+		profiler, err := pyroscope.Start(pyroscope.Config{
+			ApplicationName: "teleport",
+			ServerAddress:   address,
+			Logger:          pyroscope.StandardLogger,
+			ProfileTypes: []pyroscope.ProfileType{
+				pyroscope.ProfileCPU,
+				pyroscope.ProfileAllocObjects,
+				pyroscope.ProfileAllocSpace,
+				pyroscope.ProfileInuseObjects,
+				pyroscope.ProfileInuseSpace,
+				pyroscope.ProfileGoroutines,
+			},
+			Tags: map[string]string{
+				"hostname": hostname,
+				"version":  teleport.Version,
+				"git_ref":  teleport.Gitref,
+			},
+		})
+		if err != nil {
+			slog.ErrorContext(process.ExitContext(), "error starting pyroscope profiler", "error", err)
+		} else {
+			process.OnExit("pyroscope.profiler", func(payload any) {
+				profiler.Flush(payload == nil)
+				_ = profiler.Stop()
+			})
 		}
 	}
 
