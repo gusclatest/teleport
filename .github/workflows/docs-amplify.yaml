@@ -8,7 +8,7 @@ permissions:
 
 concurrency: 
   # This value is arbitrary as long as it includes the pull request number
-  group: 'limit to running one instance at a time for the pull request ${{ github.event.pull_request.number }}'
+  group: 'amplify-preview-${{ github.ref }}'
 
 jobs:
   amplify-preview:
