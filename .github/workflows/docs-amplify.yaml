@@ -7,7 +7,6 @@ permissions:
   id-token: write
 
 concurrency: 
-  cancel-in-progress: true
   # This value is arbitrary as long as it includes the pull request number
   group: 'limit to running one instance at a time for the pull request ${{ github.event.pull_request.number }}'
 
