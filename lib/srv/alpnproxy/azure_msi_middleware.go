@@ -20,9 +20,11 @@ package alpnproxy
 
 import (
 	"crypto"
+	"crypto/tls"
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"sync"
 	"time"
 
 	"github.com/gravitational/trace"
@@ -45,15 +47,16 @@ type AzureMSIMiddleware struct {
 	// ClientID to be returned in a claim.
 	ClientID string
 
-	// Key used to sign JWT
-	Key crypto.Signer
-
 	// Clock is used to override time in tests.
 	Clock clockwork.Clock
 	// Log is the Logger.
 	Log logrus.FieldLogger
 	// Secret to be provided by the client.
 	Secret string
+
+	// Key used to sign JWT
+	key   crypto.Signer
+	keyMu sync.RWMutex
 }
 
 var _ LocalProxyHTTPMiddleware = &AzureMSIMiddleware{}
@@ -66,9 +69,6 @@ func (m *AzureMSIMiddleware) CheckAndSetDefaults() error {
 		m.Log = logrus.WithField(teleport.ComponentKey, "azure_msi")
 	}
 
-	if m.Key == nil {
-		return trace.BadParameter("missing Key")
-	}
 	if m.Secret == "" {
 		return trace.BadParameter("missing Secret")
 	}
@@ -94,6 +94,26 @@ func (m *AzureMSIMiddleware) HandleRequest(rw http.ResponseWriter, req *http.Req
 	}
 
 	return false
+}
+
+func (m *AzureMSIMiddleware) OnSetCert(cert *tls.Certificate) {
+	m.keyMu.Lock()
+	defer m.keyMu.Unlock()
+
+	if cert != nil {
+		// Note that the PrivateKey is most likely set by api/utils/keys.TLSCertificateForSigner
+		signer, ok := cert.PrivateKey.(crypto.Signer)
+		if ok {
+			m.key = signer
+		} else {
+			m.Log.Warn("Provided tls.Certificate has no valid private key")
+		}
+	}
+}
+func (m *AzureMSIMiddleware) getPrivateKey() crypto.Signer {
+	m.keyMu.RLock()
+	defer m.keyMu.RUnlock()
+	return m.key
 }
 
 func (m *AzureMSIMiddleware) msiEndpoint(rw http.ResponseWriter, req *http.Request) error {
@@ -176,7 +196,7 @@ func (m *AzureMSIMiddleware) toJWT(claims jwt.AzureTokenClaims) (string, error) 
 	// Create a new key that can sign and verify tokens.
 	key, err := jwt.New(&jwt.Config{
 		Clock:       m.Clock,
-		PrivateKey:  m.Key,
+		PrivateKey:  m.getPrivateKey(),
 		ClusterName: types.TeleportAzureMSIEndpoint, // todo get cluster name
 	})
 	if err != nil {

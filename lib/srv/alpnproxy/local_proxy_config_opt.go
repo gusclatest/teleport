@@ -170,3 +170,10 @@ func mySQLVersionToProto(database types.Database) string {
 	// Include MySQL server version
 	return string(common.ProtocolMySQLWithVerPrefix) + versionBase64
 }
+
+func WithOnSetCert(callback func(*tls.Certificate)) LocalProxyConfigOpt {
+	return func(config *LocalProxyConfig) error {
+		config.onSetCert = callback
+		return nil
+	}
+}
