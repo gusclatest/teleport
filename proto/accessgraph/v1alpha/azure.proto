@@ -27,7 +27,7 @@ message AzureResourceList {
   repeated AzureResource resources = 1;
 }
 
-// AzureResource is a list of Azure resources supported by the access graph.
+// AWSResource is a list of AWS resources supported by the access graph.
 message AzureResource {
   oneof resource {
     AzurePrincipal principal = 1;
@@ -87,7 +87,7 @@ message AzureRoleDefinition {
   string role_name = 8;
 }
 
-// AzurePermission defines the actions and not (disallowed) actions for a role definition
+// AzureRBACPermission defines the actions and not (disallowed) actions for a role definition
 message AzureRBACPermission {
   repeated string actions = 1;
   repeated string not_actions = 2;
