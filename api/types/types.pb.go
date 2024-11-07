@@ -21302,12 +21302,10 @@ var xxx_messageInfo_OktaOptions proto.InternalMessageInfo
 // AccessGraphSync is a configuration for Access Graph service.
 type AccessGraphSync struct {
 	// AWS is a configuration for AWS Access Graph service poll service.
-	AWS []*AccessGraphAWSSync `protobuf:"bytes,1,rep,name=AWS,proto3" json:"aws,omitempty"`
-	// PollInterval is the frequency at which to poll for AWS resources
-	PollInterval         time.Duration `protobuf:"bytes,2,opt,name=PollInterval,proto3,stdduration" json:"poll_interval,omitempty"`
-	XXX_NoUnkeyedLiteral struct{}      `json:"-"`
-	XXX_unrecognized     []byte        `json:"-"`
-	XXX_sizecache        int32         `json:"-"`
+	AWS                  []*AccessGraphAWSSync `protobuf:"bytes,1,rep,name=AWS,proto3" json:"aws,omitempty"`
+	XXX_NoUnkeyedLiteral struct{}              `json:"-"`
+	XXX_unrecognized     []byte                `json:"-"`
+	XXX_sizecache        int32                 `json:"-"`
 }
 
 func (m *AccessGraphSync) Reset()         { *m = AccessGraphSync{} }
@@ -21875,7 +21873,7 @@ func init() {
 func init() { proto.RegisterFile("teleport/legacy/types/types.proto", fileDescriptor_9198ee693835762e) }
 
 var fileDescriptor_9198ee693835762e = []byte{
-	// 29512 bytes of a gzipped FileDescriptorProto
+	// 29497 bytes of a gzipped FileDescriptorProto
 	0x1f, 0x8b, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02, 0xff, 0xec, 0xfd, 0x6b, 0x70, 0x1c, 0x59,
 	0x76, 0x20, 0x06, 0x77, 0x55, 0xe1, 0x51, 0x38, 0x78, 0x15, 0x2e, 0x40, 0x12, 0x44, 0x37, 0xbb,
 	0xd8, 0xd9, 0xdd, 0x6c, 0x76, 0x4f, 0x37, 0x39, 0x04, 0xa7, 0x39, 0xd3, 0xd3, 0xaf, 0x29, 0x3c,
@@ -50182,21 +50180,7 @@ func (m *AccessGraphSync) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 	i -= n415
 	i = encodeVarintTypes(dAtA, i, uint64(n415))
 	i--
-	dAtA[i] = 0x1a
-	if len(m.Azure) > 0 {
-		for iNdEx := len(m.Azure) - 1; iNdEx >= 0; iNdEx-- {
-			{
-				size, err := m.Azure[iNdEx].MarshalToSizedBuffer(dAtA[:i])
-				if err != nil {
-					return 0, err
-				}
-				i -= size
-				i = encodeVarintTypes(dAtA, i, uint64(size))
-			}
-			i--
-			dAtA[i] = 0x12
-		}
-	}
+	dAtA[i] = 0x12
 	if len(m.AWS) > 0 {
 		for iNdEx := len(m.AWS) - 1; iNdEx >= 0; iNdEx-- {
 			{
@@ -50256,6 +50240,63 @@ func (m *AccessGraphAWSSync) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 		}
 		i--
 		dAtA[i] = 0x1a
+	}
+	if len(m.Regions) > 0 {
+		for iNdEx := len(m.Regions) - 1; iNdEx >= 0; iNdEx-- {
+			i -= len(m.Regions[iNdEx])
+			copy(dAtA[i:], m.Regions[iNdEx])
+			i = encodeVarintTypes(dAtA, i, uint64(len(m.Regions[iNdEx])))
+			i--
+			dAtA[i] = 0xa
+		}
+	}
+	return len(dAtA) - i, nil
+}
+
+func (m *AccessGraphAzureSync) Marshal() (dAtA []byte, err error) {
+	size := m.Size()
+	dAtA = make([]byte, size)
+	n, err := m.MarshalToSizedBuffer(dAtA[:size])
+	if err != nil {
+		return nil, err
+	}
+	return dAtA[:n], nil
+}
+
+func (m *AccessGraphAzureSync) MarshalTo(dAtA []byte) (int, error) {
+	size := m.Size()
+	return m.MarshalToSizedBuffer(dAtA[:size])
+}
+
+func (m *AccessGraphAzureSync) MarshalToSizedBuffer(dAtA []byte) (int, error) {
+	i := len(dAtA)
+	_ = i
+	var l int
+	_ = l
+	if m.XXX_unrecognized != nil {
+		i -= len(m.XXX_unrecognized)
+		copy(dAtA[i:], m.XXX_unrecognized)
+	}
+	if len(m.Integration) > 0 {
+		i -= len(m.Integration)
+		copy(dAtA[i:], m.Integration)
+		i = encodeVarintTypes(dAtA, i, uint64(len(m.Integration)))
+		i--
+		dAtA[i] = 0x22
+	}
+	if len(m.UmiClientId) > 0 {
+		i -= len(m.UmiClientId)
+		copy(dAtA[i:], m.UmiClientId)
+		i = encodeVarintTypes(dAtA, i, uint64(len(m.UmiClientId)))
+		i--
+		dAtA[i] = 0x1a
+	}
+	if len(m.SubscriptionID) > 0 {
+		i -= len(m.SubscriptionID)
+		copy(dAtA[i:], m.SubscriptionID)
+		i = encodeVarintTypes(dAtA, i, uint64(len(m.SubscriptionID)))
+		i--
+		dAtA[i] = 0x12
 	}
 	if len(m.Regions) > 0 {
 		for iNdEx := len(m.Regions) - 1; iNdEx >= 0; iNdEx-- {
@@ -61639,6 +61680,12 @@ func (m *AccessGraphSync) Size() (n int) {
 	_ = l
 	if len(m.AWS) > 0 {
 		for _, e := range m.AWS {
+			l = e.Size()
+			n += 1 + l + sovTypes(uint64(l))
+		}
+	}
+	if len(m.Azure) > 0 {
+		for _, e := range m.Azure {
 			l = e.Size()
 			n += 1 + l + sovTypes(uint64(l))
 		}
@@ -133729,6 +133776,40 @@ func (m *AccessGraphSync) Unmarshal(dAtA []byte) error {
 				return io.ErrUnexpectedEOF
 			}
 			if err := github_com_gogo_protobuf_types.StdDurationUnmarshal(&m.PollInterval, dAtA[iNdEx:postIndex]); err != nil {
+				return err
+			}
+			iNdEx = postIndex
+		case 2:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field Azure", wireType)
+			}
+			var msglen int
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowTypes
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				msglen |= int(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			if msglen < 0 {
+				return ErrInvalidLengthTypes
+			}
+			postIndex := iNdEx + msglen
+			if postIndex < 0 {
+				return ErrInvalidLengthTypes
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			m.Azure = append(m.Azure, &AccessGraphAzureSync{})
+			if err := m.Azure[len(m.Azure)-1].Unmarshal(dAtA[iNdEx:postIndex]); err != nil {
 				return err
 			}
 			iNdEx = postIndex
