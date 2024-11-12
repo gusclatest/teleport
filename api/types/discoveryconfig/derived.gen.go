@@ -301,7 +301,7 @@ func deriveTeleportEqual_20(this, that *types.AccessGraphAzureSync) bool {
 		this != nil && that != nil &&
 			deriveTeleportEqual_14(this.Regions, that.Regions) &&
 			this.SubscriptionID == that.SubscriptionID &&
-			this.UmiClientId == that.UmiClientId &&
+			this.UMIClientID == that.UMIClientID &&
 			this.Integration == that.Integration
 }
 
