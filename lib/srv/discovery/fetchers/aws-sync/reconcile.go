@@ -20,25 +20,20 @@ package aws_sync
 
 import (
 	"fmt"
-
+	"github.com/gravitational/teleport/lib/srv/discovery/common"
 	"google.golang.org/protobuf/proto"
 
 	accessgraphv1alpha "github.com/gravitational/teleport/gen/proto/go/accessgraph/v1alpha"
 )
-
-func newResourceList() *accessgraphv1alpha.AWSResourceList {
-	return &accessgraphv1alpha.AWSResourceList{
-		Resources: make([]*accessgraphv1alpha.AWSResource, 0),
-	}
-}
 
 // ReconcileResults reconciles two Resources objects and returns the operations
 // required to reconcile them into the new state.
 // It returns two AWSResourceList objects, one for resources to upsert and one
 // for resources to delete.
 func ReconcileResults(old *Resources, new *Resources) (upsert, delete *accessgraphv1alpha.AWSResourceList) {
-	upsert, delete = newResourceList(), newResourceList()
-	reconciledResources := []*reconcilePair{
+	upserts := make([]*accessgraphv1alpha.AWSResource, 0)
+	deletes := make([]*accessgraphv1alpha.AWSResource, 0)
+	reconciledResources := []*reconcilePair[accessgraphv1alpha.AWSResource]{
 		reconcile(old.Users, new.Users, usersKey, usersWrap),
 		reconcile(old.UserInlinePolicies, new.UserInlinePolicies, userInlinePolKey, userInlinePolWrap),
 		reconcile(old.UserAttachedPolicies, new.UserAttachedPolicies, userAttchPolKey, userAttchPolWrap),
@@ -61,62 +56,51 @@ func ReconcileResults(old *Resources, new *Resources) (upsert, delete *accessgra
 		reconcile(old.OIDCProviders, new.OIDCProviders, oidcProvKey, oidcProvWrap),
 	}
 	for _, res := range reconciledResources {
-		upsert.Resources = append(upsert.Resources, res.upsert.Resources...)
-		delete.Resources = append(delete.Resources, res.delete.Resources...)
+		upserts = append(upserts, res.upserts...)
+		deletes = append(deletes, res.deletes...)
 	}
+	upsert = &accessgraphv1alpha.AWSResourceList{Resources: upserts}
+	delete = &accessgraphv1alpha.AWSResourceList{Resources: deletes}
 	return upsert, delete
 }
 
-type reconcilePair struct {
-	upsert, delete *accessgraphv1alpha.AWSResourceList
+type reconcilePair[R any] struct {
+	upserts, deletes []*R
 }
 
-func deduplicateSlice[T any](s []T, key func(T) string) []T {
-	out := make([]T, 0, len(s))
-	seen := make(map[string]struct{})
-	for _, v := range s {
-		if _, ok := seen[key(v)]; ok {
-			continue
-		}
-		seen[key(v)] = struct{}{}
-		out = append(out, v)
-	}
-	return out
-}
-
-func reconcile[T proto.Message](
-	oldItems []T,
-	newItems []T,
-	keyFn func(T) string,
-	wrapFn func(T) *accessgraphv1alpha.AWSResource,
-) *reconcilePair {
+func reconcile[Type proto.Message, Res any](
+	oldItems []Type,
+	newItems []Type,
+	keyFn func(Type) string,
+	wrapFn func(Type) *Res,
+) *reconcilePair[Res] {
 	// Remove duplicates from the new items
-	newItems = deduplicateSlice(newItems, keyFn)
-	upsertRes := newResourceList()
-	deleteRes := newResourceList()
+	newItems = common.DeduplicateSlice(newItems, keyFn)
+	upserts := make([]*Res, 0)
+	deletes := make([]*Res, 0)
 
 	// Delete all old items if there are no new items
 	if len(newItems) == 0 {
 		for _, item := range oldItems {
-			deleteRes.Resources = append(deleteRes.Resources, wrapFn(item))
+			deletes = append(deletes, wrapFn(item))
 		}
-		return &reconcilePair{upsertRes, deleteRes}
+		return &reconcilePair[Res]{upserts, deletes}
 	}
 
 	// Create all new items if there are no old items
 	if len(oldItems) == 0 {
 		for _, item := range newItems {
-			upsertRes.Resources = append(upsertRes.Resources, wrapFn(item))
+			upserts = append(upserts, wrapFn(item))
 		}
-		return &reconcilePair{upsertRes, deleteRes}
+		return &reconcilePair[Res]{upserts, deletes}
 	}
 
 	// Map old and new items by their key
-	oldMap := make(map[string]T, len(oldItems))
+	oldMap := make(map[string]Type, len(oldItems))
 	for _, item := range oldItems {
 		oldMap[keyFn(item)] = item
 	}
-	newMap := make(map[string]T, len(newItems))
+	newMap := make(map[string]Type, len(newItems))
 	for _, item := range newItems {
 		newMap[keyFn(item)] = item
 	}
@@ -124,17 +108,17 @@ func reconcile[T proto.Message](
 	// Append new or modified items to the upsert list
 	for _, item := range newItems {
 		if oldItem, ok := oldMap[keyFn(item)]; !ok || !proto.Equal(oldItem, item) {
-			upsertRes.Resources = append(upsertRes.Resources, wrapFn(item))
+			upserts = append(upserts, wrapFn(item))
 		}
 	}
 
 	// Append removed items to the delete list
 	for _, item := range oldItems {
 		if _, ok := newMap[keyFn(item)]; !ok {
-			deleteRes.Resources = append(deleteRes.Resources, wrapFn(item))
+			deletes = append(deletes, wrapFn(item))
 		}
 	}
-	return &reconcilePair{upsertRes, deleteRes}
+	return &reconcilePair[Res]{upserts, deletes}
 }
 
 func instanceKey(instance *accessgraphv1alpha.AWSInstanceV1) string {
