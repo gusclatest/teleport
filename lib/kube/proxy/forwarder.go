@@ -1772,7 +1772,15 @@ func (f *Forwarder) portForward(authCtx *authContext, w http.ResponseWriter, req
 		return nil, trace.Wrap(err)
 	}
 
+	onForwardConnection := func(addr string, success bool) {
+		if !success {
+			f.log.Warn("Failed to establish connection to %q.", addr)
+		}
+		// TODO: Consider emit audit log events. Here we have the target pod port and an actual success value.
+	}
+
 	onPortForward := func(addr string, success bool) {
+		// NOTE: Kubectl doesn't send the target port initially so `addr` will have port 0.
 		if !sess.isLocalKubernetesCluster {
 			return
 		}
@@ -1791,7 +1799,10 @@ func (f *Forwarder) portForward(authCtx *authContext, w http.ResponseWriter, req
 			Status: apievents.Status{
 				Success: success,
 			},
+			KubernetesClusterMetadata: sess.eventClusterMeta(req),
 		}
+		// NOTE: Success will always be true as there is nothing that can fail at this point.
+		// TODO: Move this to onForwardConnection / rename. Keeping for now to avoid orphan const code.
 		if !success {
 			portForward.Code = events.PortForwardFailureCode
 		}
@@ -1802,15 +1813,16 @@ func (f *Forwarder) portForward(authCtx *authContext, w http.ResponseWriter, req
 
 	q := req.URL.Query()
 	request := portForwardRequest{
-		podNamespace:       p.ByName("podNamespace"),
-		podName:            p.ByName("podName"),
-		ports:              q["ports"],
-		context:            ctx,
-		httpRequest:        req,
-		httpResponseWriter: w,
-		onPortForward:      onPortForward,
-		targetDialer:       dialer,
-		pingPeriod:         f.cfg.ConnPingPeriod,
+		podNamespace:        p.ByName("podNamespace"),
+		podName:             p.ByName("podName"),
+		ports:               q["ports"],
+		context:             ctx,
+		httpRequest:         req,
+		httpResponseWriter:  w,
+		onPortForward:       onPortForward,
+		onForwardConnection: onForwardConnection,
+		targetDialer:        dialer,
+		pingPeriod:          f.cfg.ConnPingPeriod,
 	}
 	f.log.Debugf("Starting %v.", request)
 	err = runPortForwarding(request)
@@ -2186,7 +2198,6 @@ func (f *Forwarder) getSPDYExecutor(sess *clusterSession, req *http.Request) (re
 }
 
 func (f *Forwarder) getPortForwardDialer(sess *clusterSession, req *http.Request) (httpstream.Dialer, error) {
-
 	wsDialer, err := f.getWebsocketDialer(sess, req)
 	if err != nil {
 		return nil, trace.Wrap(err)

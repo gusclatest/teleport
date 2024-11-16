@@ -37,15 +37,16 @@ import (
 
 // portForwardRequest is a request that specifies port forwarding
 type portForwardRequest struct {
-	podNamespace       string
-	podName            string
-	ports              []string
-	httpRequest        *http.Request
-	httpResponseWriter http.ResponseWriter
-	onPortForward      portForwardCallback
-	context            context.Context
-	targetDialer       httpstream.Dialer
-	pingPeriod         time.Duration
+	podNamespace        string
+	podName             string
+	ports               []string
+	httpRequest         *http.Request
+	httpResponseWriter  http.ResponseWriter
+	onPortForward       portForwardCallback
+	onForwardConnection portForwardCallback
+	context             context.Context
+	targetDialer        httpstream.Dialer
+	pingPeriod          time.Duration
 }
 
 func (p portForwardRequest) String() string {
@@ -179,7 +180,7 @@ func (h *portForwardProxy) forwardStreamPair(p *httpStreamPair, remotePort int64
 
 	// read and write from the error stream
 	targetErrorStream, err := h.targetConn.CreateStream(headers)
-	h.onPortForward(net.JoinHostPort(h.podName, port), err == nil /* success */)
+	h.onForwardConnection(net.JoinHostPort(h.podName, port), err == nil /* success */)
 	if err != nil {
 		err := trace.ConnectionProblem(err, "error creating error stream for port %d", remotePort)
 		p.sendErr(err)
@@ -294,6 +295,7 @@ func (h *portForwardProxy) requestID(stream httpstream.Stream) (string, error) {
 // when the httpstream.Connection is closed.
 func (h *portForwardProxy) run() {
 	h.Debugf("Waiting for port forward streams.")
+	h.onPortForward(net.JoinHostPort(h.podName, "0"), true)
 	for {
 		select {
 		case <-h.context.Done():

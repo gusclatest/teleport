@@ -23,6 +23,7 @@ import (
 	"encoding/binary"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"strings"
 	"sync"
@@ -142,11 +143,12 @@ func runPortForwardingWebSocket(req portForwardRequest) error {
 	}
 
 	h := &websocketPortforwardHandler{
-		conn:          conn,
-		streamPairs:   streamPairs,
-		podName:       req.podName,
-		targetConn:    targetConn,
-		onPortForward: req.onPortForward,
+		conn:                conn,
+		streamPairs:         streamPairs,
+		podName:             req.podName,
+		targetConn:          targetConn,
+		onPortForward:       req.onPortForward,
+		onForwardConnection: req.onForwardConnection,
 		FieldLogger: logrus.WithFields(logrus.Fields{
 			teleport.ComponentKey: teleport.Component(teleport.ComponentProxyKube),
 			events.RemoteAddr:     req.httpRequest.RemoteAddr,
@@ -207,11 +209,12 @@ func (w *websocketChannelPair) sendErr(err error) {
 // websocketPortforwardHandler is capable of processing a single port forward
 // request over a websocket connection
 type websocketPortforwardHandler struct {
-	conn          *wsstream.Conn
-	streamPairs   []*websocketChannelPair
-	podName       string
-	targetConn    httpstream.Connection
-	onPortForward portForwardCallback
+	conn                *wsstream.Conn
+	streamPairs         []*websocketChannelPair
+	podName             string
+	targetConn          httpstream.Connection
+	onPortForward       portForwardCallback
+	onForwardConnection portForwardCallback
 	logrus.FieldLogger
 	context context.Context
 }
@@ -223,6 +226,7 @@ func (h *websocketPortforwardHandler) run() {
 	wg := sync.WaitGroup{}
 	wg.Add(len(h.streamPairs))
 
+	h.onPortForward(net.JoinHostPort(h.podName, "0"), true)
 	for _, pair := range h.streamPairs {
 		p := pair
 		go func() {
@@ -251,7 +255,7 @@ func (h *websocketPortforwardHandler) forwardStreamPair(p *websocketChannelPair)
 
 	// read and write from the error stream
 	targetErrorStream, err := h.targetConn.CreateStream(headers)
-	h.onPortForward(fmt.Sprintf("%v:%v", h.podName, p.port), err == nil /* success */)
+	h.onForwardConnection(net.JoinHostPort(h.podName, fmt.Sprint(p.port)), err == nil /* success */)
 	if err != nil {
 		p.sendErr(err)
 		return
