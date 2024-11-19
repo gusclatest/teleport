@@ -136,7 +136,7 @@ type authRotateStyle struct {
 
 var formTheme = huh.ThemeBase16()
 var authRotateTheme = authRotateStyle{
-	formTheme:    huh.ThemeBase16(),
+	formTheme:    formTheme,
 	normal:       lipgloss.NewStyle(),
 	title:        formTheme.Focused.Title,
 	highlight:    formTheme.Focused.SelectedOption,
