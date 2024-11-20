@@ -1802,7 +1802,7 @@ func (f *Forwarder) portForward(authCtx *authContext, w http.ResponseWriter, req
 			KubernetesClusterMetadata: sess.eventClusterMeta(req),
 		}
 		// NOTE: Success will always be true as there is nothing that can fail at this point.
-		// TODO: Move this to onForwardConnection / rename. Keeping for now to avoid orphan const code.
+		// TODO(creack): Move this to onForwardConnection / rename. Keeping for now to avoid orphan const code.
 		if !success {
 			portForward.Code = events.PortForwardFailureCode
 		}
