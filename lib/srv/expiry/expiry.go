@@ -29,6 +29,7 @@ import (
 	"github.com/gravitational/teleport/api/types"
 	apievents "github.com/gravitational/teleport/api/types/events"
 	"github.com/gravitational/teleport/lib/auth/authclient"
+	"github.com/gravitational/teleport/lib/events"
 	"github.com/gravitational/teleport/lib/services"
 	"github.com/gravitational/trace"
 )
@@ -149,7 +150,10 @@ func (s *Service) handleAccessRequestChanges(ctx context.Context, requests types
 			case <-ctx.Done():
 				return
 			case <-time.After(time.Until(ar.Expiry())):
-				s.tryExpireRequest(ctx, ar)
+				if err := s.tryExpireRequest(ctx, ar); err != nil {
+					s.Log.ErrorContext(ctx, "expiring access request", "error", err)
+				}
+				return
 			}
 		}()
 	}
@@ -157,15 +161,41 @@ func (s *Service) handleAccessRequestChanges(ctx context.Context, requests types
 }
 
 func (s *Service) tryExpireRequest(ctx context.Context, req types.AccessRequest) error {
-	if !time.Now().Before(s.accessRequests.Get(req.GetName()).Expiry()) {
-		// Request expiry has been extended since it was first seen.
+	current := s.accessRequests.Get(req.GetName())
+	if current == nil || time.Now().Before(current.Expiry()) {
+		// Request expiry has been extended since it was first seen or was already deleted.
 		return nil
 	}
 	s.accessRequests.Delete(req)
 	if err := s.AccessPoint.DeleteAccessRequest(ctx, req.GetName()); err != nil {
 		return trace.Wrap(err)
 	}
-	return nil
+
+	var annotations *apievents.Struct
+	if sa := req.GetSystemAnnotations(); len(sa) > 0 {
+		var err error
+		annotations, err = apievents.EncodeMapStrings(sa)
+		if err != nil {
+			return trace.Wrap(err)
+		}
+	}
+	event := &apievents.AccessRequestExpire{
+		Metadata: apievents.Metadata{
+			Type: events.AccessRequestExpireEvent,
+			Code: events.AccessRequestExpireCode,
+		},
+		ResourceMetadata: apievents.ResourceMetadata{
+			Expires: req.GetAccessExpiry(),
+		},
+		Roles:                req.GetRoles(),
+		RequestedResourceIDs: apievents.ResourceIDs(req.GetRequestedResourceIDs()),
+		RequestID:            req.GetName(),
+		RequestState:         req.GetState().String(),
+		Reason:               req.GetRequestReason(),
+		MaxDuration:          req.GetMaxDuration(),
+		Annotations:          annotations,
+	}
+	return trace.Wrap(s.Emitter.EmitAuditEvent(ctx, event))
 }
 
 // Stop stops the expiry service.

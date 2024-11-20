@@ -55,6 +55,7 @@ func (process *TeleportProcess) initExpiryService() error {
 	if err != nil {
 		return trace.Wrap(err)
 	}
+	defer asyncEmitter.Close()
 
 	expiryService, err := expiry.New(process.ExitContext(), &expiry.Config{
 		Log:         logger,
