@@ -445,12 +445,18 @@ func (r *AccessRequestV3) SetName(name string) {
 
 // Expiry gets Expiry
 func (r *AccessRequestV3) Expiry() time.Time {
+	// If resource expiry is not set, assume request was created before creation of
+	// explicit access request expiry service and use resource expiry.
+	if r.Spec.ResourceExpiry != nil {
+		return *r.Spec.ResourceExpiry
+	}
 	return r.Metadata.Expiry()
 }
 
 // SetExpiry sets Expiry
 func (r *AccessRequestV3) SetExpiry(expiry time.Time) {
-	r.Metadata.SetExpiry(expiry.UTC())
+	t := expiry.UTC()
+	r.Spec.ResourceExpiry = &t
 }
 
 // GetMetadata gets Metadata

@@ -429,6 +429,16 @@ func ForDiscovery(cfg Config) Config {
 	return cfg
 }
 
+// ForExpiry sets up watch configuration for expiry servers.
+func ForExpiry(cfg Config) Config {
+	cfg.target = "expiry"
+	cfg.Watches = []types.WatchKind{
+		{Kind: types.KindAccessRequest},
+	}
+	cfg.QueueSize = defaults.ExpiryQueueSize
+	return cfg
+}
+
 // ForOkta sets up watch configuration for Okta servers.
 func ForOkta(cfg Config) Config {
 	cfg.target = "okta"

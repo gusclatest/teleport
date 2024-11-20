@@ -70,6 +70,8 @@ const (
 	RoleInstance SystemRole = "Instance"
 	// RoleDiscovery is a role for discovery nodes in the cluster
 	RoleDiscovery SystemRole = "Discovery"
+	// RoleExpiry is a role for expiry service.
+	RoleExpiry SystemRole = "Expiry"
 	// RoleOkta is a role for Okta nodes in the cluster
 	RoleOkta SystemRole = "Okta"
 	// RoleMDM is the role for MDM services in the cluster.
@@ -105,6 +107,7 @@ var roleMappings = map[string]SystemRole{
 	"bot":               RoleBot,
 	"instance":          RoleInstance,
 	"discovery":         RoleDiscovery,
+	"expiry":            RoleExpiry,
 	"okta":              RoleOkta,
 	"mdm":               RoleMDM,
 	"accessgraphplugin": RoleAccessGraphPlugin,
@@ -137,6 +140,7 @@ var localServiceMappings = map[SystemRole]struct{}{
 	RoleDatabase:          {},
 	RoleWindowsDesktop:    {},
 	RoleDiscovery:         {},
+	RoleExpiry:            {},
 	RoleOkta:              {},
 	RoleMDM:               {},
 	RoleAccessGraphPlugin: {},

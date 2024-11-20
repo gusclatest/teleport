@@ -133,6 +133,9 @@ const (
 	// ComponentDiscovery is the Discovery service.
 	ComponentDiscovery = "discovery:service"
 
+	// ComponentExpiry is the Expiry service.
+	ComponentExpiry = "expiry:service"
+
 	// ComponentAppProxy is the application handler within the web proxy service.
 	ComponentAppProxy = "app:web"
 
