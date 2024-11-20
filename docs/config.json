@@ -1957,7 +1957,7 @@
     },
     {
       "source": "/deploy-a-cluster/deployments/ibm/",
-      "destination": "/admin-guides/deploy-a-cluster/deployments/ibm/",
+      "destination": "/admin-guides/deploy-a-cluster/helm-deployments/ibm/",
       "permanent": true
     },
     {
