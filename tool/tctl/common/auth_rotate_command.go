@@ -147,17 +147,18 @@ type rotateModel struct {
 	client   *authclient.Client
 	pingResp proto.PingResponse
 
-	rotateStatusModel      *rotateStatusModel
-	caTypeModel            *caTypeModel
-	currentPhaseModel      *currentPhaseModel
-	targetPhaseModel       *targetPhaseModel
-	confirmed              bool
-	sendRotateRequestModel *sendRotateRequestModel
-	waitForReadyModel      *waitForReadyModel
-	continueBinding        key.Binding
-	newBinding             key.Binding
-	quitBinding            key.Binding
-	help                   help.Model
+	rotateStatusModel             *rotateStatusModel
+	caTypeModel                   *caTypeModel
+	currentPhaseModel             *currentPhaseModel
+	waitForCurrentPhaseReadyModel *waitForReadyModel
+	targetPhaseModel              *targetPhaseModel
+	confirmed                     bool
+	sendRotateRequestModel        *sendRotateRequestModel
+	waitForTargetPhaseReadyModel  *waitForReadyModel
+	continueBinding               key.Binding
+	newBinding                    key.Binding
+	quitBinding                   key.Binding
+	help                          help.Model
 }
 
 func newRotateModel(client *authclient.Client, pingResp proto.PingResponse, caType types.CertAuthType) *rotateModel {
@@ -223,6 +224,20 @@ func (m *rotateModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, tea.Batch(cmds...)
 	}
 
+	// Now that we've got the current phase, init the waitForCurrentPhaseReady
+	// model if we haven't yet and the current phase is not standby.
+	if m.waitForCurrentPhaseReadyModel == nil && m.currentPhaseModel.phase != "standby" {
+		m.waitForCurrentPhaseReadyModel = newWaitForReadyModel(m.client, m.currentPhaseModel.caID, m.currentPhaseModel.phase)
+		cmds = append(cmds, m.waitForCurrentPhaseReadyModel.init())
+	}
+	if m.waitForCurrentPhaseReadyModel != nil {
+		cmds = append(cmds, m.waitForCurrentPhaseReadyModel.update(msg))
+		if !m.waitForCurrentPhaseReadyModel.ready() {
+			// Return early if the current phase is not ready yet.
+			return m, tea.Batch(cmds...)
+		}
+	}
+
 	// Now that we know the current phase, init the target phase model if we haven't yet.
 	if m.targetPhaseModel == nil {
 		m.targetPhaseModel = newTargetPhaseModel(m.caTypeModel.caType, m.currentPhaseModel.phase)
@@ -265,25 +280,24 @@ func (m *rotateModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, tea.Batch(cmds...)
 	}
 
-	// Now that we've sent the rotate request, init the waitForReady model if we haven't yet.
-	if m.waitForReadyModel == nil {
-		m.waitForReadyModel = newWaitForReadyModel(m.client, m.currentPhaseModel.caID, m.targetPhaseModel.targetPhase)
-		cmds = append(cmds, m.waitForReadyModel.init())
+	// Now that we've sent the rotate request, init the waitForTargetPhaseReady model if we haven't yet.
+	if m.waitForTargetPhaseReadyModel == nil {
+		m.waitForTargetPhaseReadyModel = newWaitForReadyModel(m.client, m.currentPhaseModel.caID, m.targetPhaseModel.targetPhase)
+		cmds = append(cmds, m.waitForTargetPhaseReadyModel.init())
 	}
-	cmds = append(cmds, m.waitForReadyModel.update(msg))
+	cmds = append(cmds, m.waitForTargetPhaseReadyModel.update(msg))
 
 	// If we've made it this far, let the user restart with the keybinds.
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
 		switch {
 		case key.Matches(msg, m.continueBinding):
-			m = newRotateModel(m.client, m.pingResp, m.caTypeModel.caType)
-			return m, m.Init()
+			newModel := newRotateModel(m.client, m.pingResp, m.caTypeModel.caType)
+			newModel.waitForCurrentPhaseReadyModel = m.waitForTargetPhaseReadyModel
+			return newModel, newModel.Init()
 		case key.Matches(msg, m.newBinding):
-			m = newRotateModel(m.client, m.pingResp, "")
-			return m, m.Init()
-		case key.Matches(msg, m.quitBinding):
-			return m, tea.Quit
+			newModel := newRotateModel(m.client, m.pingResp, "")
+			return newModel, newModel.Init()
 		}
 	}
 
@@ -307,6 +321,13 @@ func (m *rotateModel) View() string {
 		return sb.String()
 	}
 
+	if m.waitForCurrentPhaseReadyModel != nil && !m.confirmed {
+		writeln(&sb, m.waitForCurrentPhaseReadyModel.view())
+		if !m.waitForCurrentPhaseReadyModel.ready() {
+			return sb.String()
+		}
+	}
+
 	writeln(&sb, m.targetPhaseModel.view())
 	if m.targetPhaseModel.targetPhase == "" {
 		return sb.String()
@@ -327,11 +348,16 @@ func (m *rotateModel) View() string {
 		return sb.String()
 	}
 
-	writeln(&sb, m.waitForReadyModel.view())
+	writeln(&sb, m.waitForTargetPhaseReadyModel.view())
+	if !m.waitForTargetPhaseReadyModel.ready() {
+		return sb.String()
+	}
 
-	writeln(&sb, authRotateTheme.normal.Render(m.help.ShortHelpView([]key.Binding{
-		m.continueBinding, m.newBinding, m.quitBinding,
-	})))
+	helpBindings := []key.Binding{m.continueBinding, m.newBinding, m.quitBinding}
+	if m.waitForTargetPhaseReadyModel.targetPhase == "standby" {
+		helpBindings = helpBindings[1:]
+	}
+	writeln(&sb, authRotateTheme.normal.Render(m.help.ShortHelpView(helpBindings)))
 
 	return sb.String()
 }
@@ -400,10 +426,9 @@ func (m *rotateStatusModel) view() string {
 	m.status.renderText(&table, false /*debug*/)
 
 	var sb strings.Builder
-	sb.WriteString(authRotateTheme.title.MarginLeft(2).Render("Current status"))
+	sb.WriteString(authRotateTheme.title.Render("Current status"))
 	writeln(&sb, authRotateTheme.title.Render(m.spinner.View()))
 	sb.WriteString(authRotateTheme.normal.
-		MarginLeft(2).MarginTop(0).
 		Render(table.String()))
 	return sb.String()
 }
@@ -522,6 +547,17 @@ func (m *currentPhaseModel) view() string {
 	sb.WriteString(authRotateTheme.normal.Render("Current rotation phase is "))
 	sb.WriteString(authRotateTheme.highlight.Render(m.phase))
 	sb.WriteString(authRotateTheme.normal.Render("."))
+	if remaining := remainingPhases(m.phase); len(remaining) > 0 {
+		sb.WriteString(authRotateTheme.normal.Render(" (Remaining phases: "))
+		for len(remaining) > 1 {
+			phase := remaining[0]
+			remaining = remaining[1:]
+			sb.WriteString(authRotateTheme.highlight.Render(phase))
+			sb.WriteString(authRotateTheme.normal.Render(", "))
+		}
+		sb.WriteString(authRotateTheme.highlight.Render(remaining[0]))
+		sb.WriteString(authRotateTheme.normal.Render(")"))
+	}
 	return sb.String()
 }
 
@@ -579,9 +615,9 @@ func (m *targetPhaseModel) view() string {
 	var sb strings.Builder
 	sb.WriteString(authRotateTheme.normal.Render("Target rotation phase is "))
 	sb.WriteString(authRotateTheme.highlight.Render(m.targetPhase))
-	sb.WriteString(".")
+	writeln(&sb, authRotateTheme.normal.Render("."))
 	sb.WriteString(authRotateTheme.normal.Width(80).
-		MarginTop(2).MarginBottom(1).MarginLeft(2).
+		MarginTop(1).MarginBottom(1).MarginLeft(2).
 		Render(phaseHelpText(m.caType, m.currentPhase, m.targetPhase)))
 	return sb.String()
 }
@@ -659,15 +695,27 @@ func (m *sendRotateRequestModel) view() string {
 }
 
 type waitForReadyModel struct {
-	client          *authclient.Client
-	targetPhase     string
-	kindReadyModels []*waitForKindReadyModel
+	client             *authclient.Client
+	targetPhase        string
+	kindReadyModels    []*waitForKindReadyModel
+	manualSteps        []string
+	acknowledged       bool
+	skipped            bool
+	acknowledgeBinding key.Binding
+	skipBinding        key.Binding
+	quitBinding        key.Binding
+	help               help.Model
 }
 
 func newWaitForReadyModel(client *authclient.Client, caID types.CertAuthID, targetPhase string) *waitForReadyModel {
 	m := &waitForReadyModel{
-		client:      client,
-		targetPhase: targetPhase,
+		client:             client,
+		targetPhase:        targetPhase,
+		manualSteps:        manualSteps(caID.Type, targetPhase),
+		acknowledgeBinding: key.NewBinding(key.WithKeys("a"), key.WithHelp("a", "acknowledge all steps have been completed")),
+		skipBinding:        key.NewBinding(key.WithKeys("s"), key.WithHelp("s", "skip all readiness checks (unsafe)")),
+		quitBinding:        key.NewBinding(key.WithKeys("q"), key.WithHelp("q", "quit")),
+		help:               help.New(),
 	}
 	if caID.Type != types.HostCA {
 		return m
@@ -711,6 +759,21 @@ func adaptServerGetter[T rotatable](f func() ([]T, error)) func() ([]rotatable, 
 	}
 }
 
+func (m *waitForReadyModel) ready() bool {
+	if m.skipped {
+		return true
+	}
+	if len(m.manualSteps) > 0 && !m.acknowledged {
+		return false
+	}
+	for _, kindReadyModel := range m.kindReadyModels {
+		if !kindReadyModel.ready() {
+			return false
+		}
+	}
+	return true
+}
+
 func (m *waitForReadyModel) init() tea.Cmd {
 	var cmds []tea.Cmd
 	for _, kindReadyModel := range m.kindReadyModels {
@@ -720,6 +783,18 @@ func (m *waitForReadyModel) init() tea.Cmd {
 }
 
 func (m *waitForReadyModel) update(msg tea.Msg) tea.Cmd {
+	if m.ready() {
+		return nil
+	}
+	switch msg := msg.(type) {
+	case tea.KeyMsg:
+		switch {
+		case key.Matches(msg, m.acknowledgeBinding):
+			m.acknowledged = true
+		case key.Matches(msg, m.skipBinding):
+			m.skipped = true
+		}
+	}
 	var cmds []tea.Cmd
 	for i := range m.kindReadyModels {
 		if m.kindReadyModels[i].ready() {
@@ -734,6 +809,19 @@ func (m *waitForReadyModel) view() string {
 	var sb strings.Builder
 	for _, kindReadyModel := range m.kindReadyModels {
 		writeln(&sb, kindReadyModel.view())
+	}
+	manualStepPrefix := authRotateTheme.errorMessage.Render("! ")
+	if m.acknowledged {
+		manualStepPrefix = authRotateTheme.highlight.Render("✓ ")
+	}
+	for _, manualStep := range m.manualSteps {
+		sb.WriteString(manualStepPrefix)
+		writeln(&sb, manualStep)
+	}
+	if !m.ready() {
+		writeln(&sb, authRotateTheme.normal.PaddingTop(1).Render(
+			m.help.ShortHelpView([]key.Binding{m.acknowledgeBinding, m.skipBinding, m.quitBinding}),
+		))
 	}
 	return sb.String()
 }
@@ -834,7 +922,7 @@ func (m *waitForKindReadyModel) view() string {
 		sb.WriteString(authRotateTheme.highlight.Render("✓"))
 		sb.WriteString(authRotateTheme.normal.Render(" All "))
 		sb.WriteString(authRotateTheme.highlight.Render(m.desc))
-		sb.WriteString(authRotateTheme.normal.Render(" entered "))
+		sb.WriteString(authRotateTheme.normal.Render(" are in the "))
 		sb.WriteString(authRotateTheme.highlight.Render(m.targetPhase))
 		sb.WriteString(authRotateTheme.normal.Render(
 			fmt.Sprintf(" phase (%d/%d).", m.readyStatus.readyCount, m.readyStatus.totalCount)))
@@ -842,10 +930,21 @@ func (m *waitForKindReadyModel) view() string {
 	}
 	var sb strings.Builder
 	sb.WriteString(authRotateTheme.highlight.Render(m.spinner.View()))
-	sb.WriteString(authRotateTheme.normal.Render(fmt.Sprintf("Waiting for %s to enter %s phase (%d/%d). ",
-		m.desc, m.targetPhase, m.readyStatus.readyCount, m.readyStatus.totalCount)))
+	if m.gotFirstResponse {
+		sb.WriteString(authRotateTheme.normal.Render("Waiting for "))
+		sb.WriteString(authRotateTheme.highlight.Render(m.desc))
+		sb.WriteString(authRotateTheme.normal.Render(" to enter "))
+		sb.WriteString(authRotateTheme.highlight.Render(m.targetPhase))
+		sb.WriteString(authRotateTheme.normal.Render(fmt.Sprintf(" (%d/%d). ",
+			m.readyStatus.readyCount, m.readyStatus.totalCount)))
+	} else {
+		sb.WriteString(authRotateTheme.normal.Render("Checking current rotation phase of "))
+		sb.WriteString(authRotateTheme.highlight.Render(m.desc))
+		sb.WriteString(authRotateTheme.normal.Render(". "))
+	}
 	sb.WriteString(authRotateTheme.normal.Render(fmt.Sprintf("Run 'tctl get %s' to check status.", m.desc)))
 	return sb.String()
+
 }
 
 type taggedMsg[T comparable] struct {
@@ -886,18 +985,10 @@ func phaseHelpText(caType types.CertAuthType, currentPhase, targetPhase string) 
 
 func initPhaseHelpText(sb *strings.Builder, caType types.CertAuthType) {
 	sb.WriteString("The init phase initiates a new Certificate Authority (CA) rotation. ")
-	sb.WriteString("New CA key pairs and certificates will be generated and should be trusted but will not yet be used.")
+	sb.WriteString("New CA key pairs and certificates will be generated and must be trusted but will not yet be used.")
 	switch caType {
 	case types.HostCA:
-		sb.WriteString("\n\nDuring this phase all Teleport services will automatically begin to trust the new SSH host key and X509 CA certificate.")
-	case types.OpenSSHCA:
-		sb.WriteString("\n\nDuring this phase all OpenSSH hosts should be updated to trust both the new and old CA keys.")
-	case types.UserCA:
-		sb.WriteString("\n\nDuring this phase all Windows desktops should be updated to trust both the new and old CA certificates.")
-	case types.DatabaseCA:
-		sb.WriteString("\n\nNo changes to database configuration are necessary during this phase.")
-	case types.DatabaseClientCA:
-		sb.WriteString("\n\nDuring this phase all self-hosted databases should be updated to trust both the new and old CA certificates.")
+		sb.WriteString("\nDuring this phase all Teleport services will automatically begin to trust the new SSH host key and X509 CA certificate.")
 	}
 }
 
@@ -906,78 +997,153 @@ func updateClientsPhaseHelpText(sb *strings.Builder, caType types.CertAuthType) 
 	sb.WriteString("Clients will immediately begin to use their new certificates, but servers will continue to use their original certificates.")
 	switch caType {
 	case types.HostCA:
-		sb.WriteString("\n\nDuring this phase, all Teleport services will automatically retrieve new certificates issued by the new CA.")
+		sb.WriteString("\nDuring this phase, all Teleport services will automatically retrieve new certificates issued by the new CA.")
 	case types.OpenSSHCA:
-		sb.WriteString("\n\nAll new connections to OpenSSH hosts will use certificates issued by the new CA keys.")
-		sb.WriteString("\n\nNo changes to OpenSSH host configuration are necessary during this phase.")
+		sb.WriteString("\nAll new connections to OpenSSH hosts will begin to use certificates issued by the new CA keys.")
 	case types.UserCA:
-		sb.WriteString("All new connections to Windows desktops will use certificates issued by the new CA certificate. ")
-		sb.WriteString("\n\nNo changes to Windows desktop configuration are necessary during this phase.")
-	case types.DatabaseCA:
-		sb.WriteString("\n\nNo changes to database configuration are necessary during this phase.")
+		sb.WriteString("All new connections to Windows desktops will begin to use certificates issued by the new CA certificate. ")
 	case types.DatabaseClientCA:
-		sb.WriteString("\n\nAll new database connections will use certificates issued by the new CA certificate.")
+		sb.WriteString("\nAll new database connections will begin to use certificates issued by the new CA certificate.")
 	default:
-		sb.WriteString("\n\nAll client certificates issued by this CA must be re-issued before proceeding to the update_servers phase.")
+		sb.WriteString("\nAll client certificates issued by this CA must be re-issued before proceeding to the update_servers phase.")
 	}
 }
 
 func updateServersPhaseHelpText(sb *strings.Builder, caType types.CertAuthType) {
 	sb.WriteString("In the update_servers phase servers will begin to use certificates issued by the new CA.")
-	switch caType {
-	case types.HostCA:
-		sb.WriteString("\n\nDuring this phase all OpenSSH hosts must be issued new host certificates.")
-	case types.OpenSSHCA:
-		sb.WriteString("\n\nNo changes to OpenSSH host configuration are necessary during this phase.")
-	case types.UserCA:
-		sb.WriteString("\n\nNo changes to Windows desktop configuration are necessary during this phase.")
-	case types.DatabaseCA:
-		sb.WriteString("\n\nDuring this phase all self-hosted databases must be issued new certificates.")
-	case types.DatabaseClientCA:
-		sb.WriteString("\n\nNo changes to database configuration are necessary during this phase.")
-	}
 }
 
 func rollbackPhaseHelpText(sb *strings.Builder) {
 	sb.WriteString("In the rollback phase the original CA keys become the active signing keys for all new certificates issued by the CA. ")
 	sb.WriteString("The new CA certificates/keys remain trusted until proceeding to the standby phase.")
-	sb.WriteString("\n\nDuring the rollback phase any updated certificates should be reverted to their original values.")
 }
 
 func standbyPhaseHelpText(sb *strings.Builder, caType types.CertAuthType, previousPhase string) {
-	var completed string
-	var stopTrusting string
+	sb.WriteString("The standby phase completes the ")
 	switch previousPhase {
 	case "rollback":
-		completed = "rollback"
-		stopTrusting = "new CA and exclusively trust the original CA"
+		sb.WriteString("rollback")
 	default:
-		completed = "rotation"
-		stopTrusting = "old CA"
+		sb.WriteString("rotation")
 	}
-
-	sb.WriteString("The standby phase completes the ")
-	sb.WriteString(completed)
-	sb.WriteString(".")
+	sb.WriteByte('.')
 
 	switch caType {
 	case types.HostCA:
-		sb.WriteString("\n\nAfter entering the standby phase all Teleport Services will stop trusting the ")
-		sb.WriteString(stopTrusting)
+		sb.WriteString("\nAfter entering the standby phase all Teleport Services will stop trusting the ")
+		switch previousPhase {
+		case "rollback":
+			sb.WriteString("new CA and exclusively trust the original CA")
+		default:
+			sb.WriteString("old CA")
+		}
 		sb.WriteString(" X509 certificate and SSH key.")
-	case types.UserCA:
-		sb.WriteString("\n\nAfter entering the standby phase all Windows desktops should be updated to stop trusting the ")
-		sb.WriteString(stopTrusting)
-		sb.WriteString(" certificate.")
-	case types.DatabaseClientCA:
-		sb.WriteString("\n\nAfter entering the standby phase all self-hosted databases should be updated to stop trusting the ")
-		sb.WriteString(stopTrusting)
-		sb.WriteString(" certificate.")
-	case types.OpenSSHCA:
-		sb.WriteString("\n\nAfter entering the standby phase all OpenSSH hosts should be updated to stop trusting the ")
-		sb.WriteString(stopTrusting)
-		sb.WriteString(" keys.")
 	}
+}
+
+func manualSteps(caType types.CertAuthType, phase string) []string {
+	const trustedClusterStep = "Wait up to 30 minutes for any root or leaf clusters to follow the rotation."
+	switch caType {
+	case types.HostCA:
+		switch phase {
+		case "init":
+			return []string{trustedClusterStep}
+		case "update_clients":
+			return []string{trustedClusterStep}
+		case "update_servers":
+			return []string{
+				"Any OpenSSH hosts must be issued new host certificates signed by the new CA.",
+				trustedClusterStep,
+			}
+		case "rollback":
+			return []string{
+				"Any OpenSSH host certificates reissued during the rotation must be reissued again to revert to the original issuing CA.",
+				trustedClusterStep,
+			}
+		case "standby":
+			return []string{trustedClusterStep}
+		}
+	case types.OpenSSHCA:
+		switch phase {
+		case "init":
+			return []string{
+				"Any OpenSSH hosts must be updated to trust both the new and old CA keys.",
+				trustedClusterStep,
+			}
+		case "update_clients":
+			return []string{trustedClusterStep}
+		case "update_servers":
+			return []string{trustedClusterStep}
+		case "rollback":
+			return []string{
+				"Any OpenSSH hosts updated to trust the new CA keys during the update_servers phase should be reverted to only trust the original CA keys.",
+				trustedClusterStep,
+			}
+		case "standby":
+			return []string{
+				"Any OpenSSH hosts should be updated to stop trusting the CA keys that have now been rotated out.",
+				trustedClusterStep,
+			}
+		}
+	case types.UserCA:
+		switch phase {
+		case "init":
+			return []string{
+				"All Windows desktops must be updated to trust both the new and old CA certificates.",
+				trustedClusterStep,
+			}
+		case "update_clients":
+			return []string{trustedClusterStep}
+		case "update_servers":
+			return []string{
+				"Wait up to 30 hours for all user sessions to expire, or else users may have to log out and log back in.",
+				trustedClusterStep,
+			}
+		case "rollback":
+			return []string{
+				"Any Windows desktops updated to trust the new CA certificate during the update_servers phase should be reverted to only trust the original CA certificate.",
+				trustedClusterStep,
+			}
+		case "standby":
+			return []string{
+				"All Windows desktops should be updated to stop trusting the CA certificates that have now been rotated out.",
+				trustedClusterStep,
+			}
+		}
+	case types.DatabaseCA:
+		switch phase {
+		case "update_servers":
+			return []string{"All self-hosted databases must be issued new certificates signed by the new CA."}
+		case "rollback":
+			return []string{"Any self-hosted database certificates reissued during the rotation must be reissued again to revert to the original issuing CA."}
+		}
+	case types.DatabaseClientCA:
+		switch phase {
+		case "init":
+			return []string{"All self-hosted databases must be updated to trust both the new and old CA certificates."}
+		case "standby":
+			return []string{"All self-hosted databases should be updated to stop trusting the CA certificates that have now been rotated out."}
+		}
+	case types.SAMLIDPCA:
+		switch phase {
+		case "update_clients":
+			return []string{"Any service providers that rely on the SAML IdP must by updated to trust the new CA, follow the SAML IdP guide: https://goteleport.com/docs/admin-guides/access-controls/idps/saml-guide/"}
+		case "rollback":
+			return []string{"Any service provider configuration changes made during the rotation must be reverted."}
+		}
+	case types.OIDCIdPCA:
+		// No manual steps required.
+		return nil
+	case types.SPIFFECA:
+		// TODO(strideynet): populate any known manual steps during SPIFFE CA rotation.
+		fallthrough
+	case types.OktaCA:
+		// TODO(smallinsky): populate any known manual steps during Okta CA rotation.
+		fallthrough
+	default:
+		return []string{"Consult the CA rotation docs for any manual steps that may be required: https://goteleport.com/docs/admin-guides/management/operations/ca-rotation/"}
+	}
+	return nil
 }
 
 func nextPhases(currentPhase string) []string {
@@ -990,6 +1156,26 @@ func nextPhases(currentPhase string) []string {
 		return []string{"update_servers", "rollback"}
 	case "update_servers":
 		return []string{"standby", "rollback"}
+	case "rollback":
+		return []string{"standby"}
+	}
+	return nil
+}
+
+var (
+	optimisticPhases = [...]string{"init", "update_clients", "update_servers", "standby"}
+)
+
+func remainingPhases(afterPhase string) []string {
+	switch afterPhase {
+	case "standby":
+		return optimisticPhases[:]
+	case "init":
+		return optimisticPhases[1:]
+	case "update_clients":
+		return optimisticPhases[2:]
+	case "update_servers":
+		return optimisticPhases[3:]
 	case "rollback":
 		return []string{"standby"}
 	}
