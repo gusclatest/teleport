@@ -18,8 +18,9 @@
 
 import React from 'react';
 
-import { Props, ReAuthenticate } from './ReAuthenticate';
 import { DeviceType, getMfaRegisterOptions } from 'teleport/services/mfa';
+
+import { Props, ReAuthenticate } from './ReAuthenticate';
 
 export default {
   title: 'Teleport/ReAuthenticate',
