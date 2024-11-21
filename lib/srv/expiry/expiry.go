@@ -34,18 +34,13 @@ import (
 	"github.com/gravitational/trace"
 )
 
-const (
-	// handlerTimeout is used to bound the execution time of watcher event handler.
-	handlerTimeout = time.Second * 5
-)
-
 // Config provides configuration for the expiry server.
 type Config struct {
 	// Log is the logger.
 	Log *slog.Logger
-	// Emitter is events emitter, used to submit discrete events
+	// Emitter is an events emitter, used to submit discrete events.
 	Emitter apievents.Emitter
-	// AccessPoint is a expiry access point
+	// AccessPoint is a expiry access point.
 	AccessPoint authclient.ExpiryAccessPoint
 }
 
@@ -81,11 +76,9 @@ func New(ctx context.Context, cfg *Config) (*Service, error) {
 		return nil, trace.Wrap(err)
 	}
 
-	localCtx, cancelfn := context.WithCancel(ctx)
 	s := &Service{
 		Config:         cfg,
-		ctx:            localCtx,
-		cancelfn:       cancelfn,
+		ctx:            ctx,
 		accessRequests: newAccessRequestSyncMap(),
 	}
 	return s, nil
@@ -94,25 +87,10 @@ func New(ctx context.Context, cfg *Config) (*Service, error) {
 // Start starts the expiry service.
 func (s *Service) Start() error {
 	s.Log.InfoContext(s.ctx, "Starting expiry service")
-	if err := s.initWatcher(s.ctx); err != nil {
-		return trace.Wrap(err)
-	}
-	go func() {
-		for {
-			select {
-			case <-s.ctx.Done():
-				return
-			}
-		}
-	}()
-	return nil
-}
-
-func (s *Service) initWatcher(ctx context.Context) error {
 	var err error
 	s.accessRequestWatcher, err = services.NewAccessRequestWatcher(s.ctx, services.AccessRequestWatcherConfig{
 		ResourceWatcherConfig: services.ResourceWatcherConfig{
-			Component:    teleport.ComponentExpiry,
+			Component:    teleport.ComponentAuth,
 			Logger:       s.Log,
 			Client:       s.AccessPoint,
 			MaxStaleness: time.Minute,
@@ -125,16 +103,16 @@ func (s *Service) initWatcher(ctx context.Context) error {
 
 	go func() {
 		defer func() {
-			s.Log.DebugContext(ctx, "Expiry service access request resource watcher finished")
+			s.Log.DebugContext(s.ctx, "Expiry service access request resource watcher finished")
 		}()
 
 		for {
 			select {
 			case accessRequestChanges := <-s.accessRequestWatcher.AccessRequestsC:
-				if err := s.handleAccessRequestChanges(ctx, accessRequestChanges); err != nil {
-					s.Log.ErrorContext(ctx, "new ar changes", "error", err.Error())
+				if err := s.handleAccessRequestChanges(s.ctx, accessRequestChanges); err != nil {
+					s.Log.ErrorContext(s.ctx, "new ar changes", "error", err.Error())
 				}
-			case <-ctx.Done():
+			case <-s.ctx.Done():
 				return
 			}
 		}
@@ -196,12 +174,6 @@ func (s *Service) tryExpireRequest(ctx context.Context, req types.AccessRequest)
 		Annotations:          annotations,
 	}
 	return trace.Wrap(s.Emitter.EmitAuditEvent(ctx, event))
-}
-
-// Stop stops the expiry service.
-func (s *Service) Stop() {
-	s.accessRequestWatcher.Close()
-	s.cancelfn()
 }
 
 // Wait will block while the service is running.

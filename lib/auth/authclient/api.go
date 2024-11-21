@@ -825,13 +825,21 @@ type ReadExpiryAccessPoint interface {
 }
 
 type ExpiryAccessPoint interface {
-	// accessPoint provides common access point functionality
-	accessPoint
-	// AccessRequestGetter is responsible for fetching access request resources.
-	services.DynamicAccessCore
+	// // accessPoint provides common access point functionality
+	// accessPoint
 
 	// NewWatcher returns a new event watcher.
 	NewWatcher(ctx context.Context, watch types.Watch) (types.Watcher, error)
+	// GetAccessRequests gets all currently active access requests.
+	GetAccessRequests(ctx context.Context, filter types.AccessRequestFilter) ([]types.AccessRequest, error)
+	// ListAccessRequests is an access request getter with pagination and sorting options.
+	ListAccessRequests(ctx context.Context, req *proto.ListAccessRequestsRequest) (*proto.ListAccessRequestsResponse, error)
+
+	// CreateAccessRequestV2 stores a new access request.
+	CreateAccessRequestV2(ctx context.Context, req types.AccessRequest) (types.AccessRequest, error)
+
+	// DeleteAccessRequest deletes an access request.
+	DeleteAccessRequest(ctx context.Context, reqID string) error
 }
 
 // ReadOktaAccessPoint is a read only API interface to be
@@ -1512,7 +1520,6 @@ func (w *DiscoveryWrapper) Close() error {
 
 type ExpiryWrapper struct {
 	ReadExpiryAccessPoint
-	accessPoint
 	services.AccessRequestGetter
 	NoCache ExpiryAccessPoint
 }
@@ -1520,7 +1527,6 @@ type ExpiryWrapper struct {
 func NewExpiryWrapper(base ExpiryAccessPoint, cache ReadExpiryAccessPoint) ExpiryAccessPoint {
 	return &ExpiryWrapper{
 		NoCache:               base,
-		accessPoint:           base,
 		ReadExpiryAccessPoint: cache,
 	}
 }

@@ -355,9 +355,6 @@ const (
 
 	// DiscoveryQueueSize is discovery service queue size.
 	DiscoveryQueueSize = 128
-
-	// ExpiryQueueSize is expiry service queue size.
-	ExpiryQueueSize = 128
 )
 
 var (
