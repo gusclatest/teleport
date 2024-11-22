@@ -22,26 +22,33 @@ import (
 	"cmp"
 	"context"
 	"fmt"
+	"io"
+	"log/slog"
 	"os"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/alecthomas/kingpin/v2"
 	"github.com/charmbracelet/bubbles/help"
 	"github.com/charmbracelet/bubbles/key"
-	bubblespinner "github.com/charmbracelet/bubbles/spinner"
+	"github.com/charmbracelet/bubbles/spinner"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/huh"
-	"github.com/charmbracelet/huh/spinner"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/gravitational/trace"
+	"github.com/sirupsen/logrus"
 	"golang.org/x/term"
 
 	"github.com/gravitational/teleport/api/client/proto"
 	apidefaults "github.com/gravitational/teleport/api/defaults"
+	"github.com/gravitational/teleport/api/mfa"
 	"github.com/gravitational/teleport/api/types"
+	"github.com/gravitational/teleport/api/utils/prompt"
 	"github.com/gravitational/teleport/lib/auth/authclient"
+	libmfa "github.com/gravitational/teleport/lib/client/mfa"
 	"github.com/gravitational/teleport/lib/defaults"
+	logutils "github.com/gravitational/teleport/lib/utils/log"
 )
 
 const (
@@ -90,17 +97,6 @@ func (c *authRotateCommand) Run(ctx context.Context, client *authclient.Client) 
 	return trace.Wrap(c.runNoninteractive(ctx, client))
 }
 
-func (c *authRotateCommand) runInteractive(ctx context.Context, client *authclient.Client) error {
-	pingResp, err := client.Ping(ctx)
-	if err != nil {
-		return trace.Wrap(err, "failed to ping cluster")
-	}
-	m := newRotateModel(client, pingResp, types.CertAuthType(c.caType))
-	p := tea.NewProgram(m, tea.WithContext(ctx))
-	_, err = p.Run()
-	return trace.Wrap(err)
-}
-
 func (c *authRotateCommand) runNoninteractive(ctx context.Context, client *authclient.Client) error {
 	if c.caType == "" {
 		return trace.BadParameter("required flag --type not provided")
@@ -126,6 +122,17 @@ func (c *authRotateCommand) runNoninteractive(ctx context.Context, client *authc
 	return nil
 }
 
+func (c *authRotateCommand) runInteractive(ctx context.Context, client *authclient.Client) error {
+	pingResp, err := client.Ping(ctx)
+	if err != nil {
+		return trace.Wrap(err, "failed to ping cluster")
+	}
+	m := newRotateModel(client, pingResp, types.CertAuthType(c.caType))
+	p := tea.NewProgram(m, tea.WithContext(ctx))
+	_, err = p.Run()
+	return trace.Wrap(err)
+}
+
 type authRotateStyle struct {
 	formTheme    *huh.Theme
 	normal       lipgloss.Style
@@ -147,6 +154,7 @@ type rotateModel struct {
 	client   *authclient.Client
 	pingResp proto.PingResponse
 
+	logsModel                     *writerModel
 	rotateStatusModel             *rotateStatusModel
 	caTypeModel                   *caTypeModel
 	currentPhaseModel             *currentPhaseModel
@@ -154,6 +162,7 @@ type rotateModel struct {
 	targetPhaseModel              *targetPhaseModel
 	confirmed                     bool
 	sendRotateRequestModel        *sendRotateRequestModel
+	mfaPromptModel                *writerModel
 	waitForTargetPhaseReadyModel  *waitForReadyModel
 	continueBinding               key.Binding
 	newBinding                    key.Binding
@@ -165,8 +174,10 @@ func newRotateModel(client *authclient.Client, pingResp proto.PingResponse, caTy
 	m := &rotateModel{
 		client:            client,
 		pingResp:          pingResp,
+		logsModel:         newWriterModel(authRotateTheme.normal),
 		rotateStatusModel: newRotateStatusModel(client, pingResp),
 		caTypeModel:       newCATypeModel(caType),
+		mfaPromptModel:    newWriterModel(authRotateTheme.errorMessage),
 		continueBinding:   key.NewBinding(key.WithKeys("c"), key.WithHelp("c", "continue rotating selected CA")),
 		newBinding:        key.NewBinding(key.WithKeys("n"), key.WithHelp("n", "rotate a new CA")),
 		quitBinding:       key.NewBinding(key.WithKeys("q", "ctrl+c"), key.WithHelp("q", "quit")),
@@ -175,6 +186,8 @@ func newRotateModel(client *authclient.Client, pingResp proto.PingResponse, caTy
 	if caType != "" {
 		m.currentPhaseModel = newCurrentPhaseModel(client, pingResp, caType)
 	}
+	setupLoggers(m.logsModel)
+	setupMFAPrompt(client, pingResp, m.mfaPromptModel)
 	return m
 }
 
@@ -275,8 +288,8 @@ func (m *rotateModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, tea.Batch(cmds...)
 	}
 	cmds = append(cmds, m.sendRotateRequestModel.update(msg))
-	if !m.sendRotateRequestModel.complete {
-		// Return early if we don't have the result of the rotate request yet.
+	if !m.sendRotateRequestModel.success {
+		// Return early if the rotate request hasn't been successfully sent yet.
 		return m, tea.Batch(cmds...)
 	}
 
@@ -308,9 +321,8 @@ func (m *rotateModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 // string. The view is rendered after every Update.
 func (m *rotateModel) View() string {
 	var sb strings.Builder
-
+	writeln(&sb, m.logsModel.view())
 	writeln(&sb, m.rotateStatusModel.view())
-
 	writeln(&sb, m.caTypeModel.view())
 	if m.caTypeModel.caType == "" {
 		return sb.String()
@@ -344,7 +356,10 @@ func (m *rotateModel) View() string {
 	writeln(&sb, authRotateTheme.highlight.PaddingBottom(1).Render("y"))
 
 	writeln(&sb, m.sendRotateRequestModel.view())
-	if !m.sendRotateRequestModel.complete {
+	if !m.sendRotateRequestModel.success {
+		if mfaPrompt := m.mfaPromptModel.view(); len(mfaPrompt) > 0 {
+			writeln(&sb, mfaPrompt)
+		}
 		return sb.String()
 	}
 
@@ -365,7 +380,7 @@ func (m *rotateModel) View() string {
 type rotateStatusModel struct {
 	client   *authclient.Client
 	pingResp proto.PingResponse
-	spinner  bubblespinner.Model
+	spinner  spinner.Model
 
 	status *statusModel
 	err    error
@@ -376,7 +391,7 @@ func newRotateStatusModel(client *authclient.Client, pingResp proto.PingResponse
 	return &rotateStatusModel{
 		client:   client,
 		pingResp: pingResp,
-		spinner: bubblespinner.New(bubblespinner.WithSpinner(bubblespinner.Spinner{
+		spinner: spinner.New(spinner.WithSpinner(spinner.Spinner{
 			Frames: []string{"", ".", "..", "...", "...", "...", "...", "...", "..", ".", ""},
 			FPS:    time.Second / 8,
 		})),
@@ -414,7 +429,7 @@ func (m *rotateStatusModel) update(msg tea.Msg) tea.Cmd {
 	case *statusModel:
 		m.status = msg
 	}
-	return tea.Tick(1*time.Second, m.updateRotateStatus)
+	return tea.Tick(updateInterval, m.updateRotateStatus)
 }
 
 func (m *rotateStatusModel) view() string {
@@ -484,7 +499,7 @@ type currentPhaseModel struct {
 	client   *authclient.Client
 	pingResp proto.PingResponse
 
-	spinner tea.Model
+	spinner spinner.Model
 	caType  types.CertAuthType
 	caID    types.CertAuthID
 	phase   string
@@ -495,13 +510,13 @@ func newCurrentPhaseModel(client *authclient.Client, pingResp proto.PingResponse
 	return &currentPhaseModel{
 		client:   client,
 		pingResp: pingResp,
-		spinner:  spinner.New().Title("Fetching current rotation phase"),
+		spinner:  spinner.New(spinner.WithSpinner(spinner.Dot)),
 		caType:   caType,
 	}
 }
 
 func (m *currentPhaseModel) init() tea.Cmd {
-	return tea.Batch(m.getCurrentPhase, m.spinner.Init())
+	return tea.Batch(m.getCurrentPhase, m.spinner.Tick)
 }
 
 func (m *currentPhaseModel) getCurrentPhase() tea.Msg {
@@ -541,7 +556,10 @@ func (m *currentPhaseModel) update(msg tea.Msg) tea.Cmd {
 
 func (m *currentPhaseModel) view() string {
 	if m.phase == "" {
-		return m.spinner.View()
+		var sb strings.Builder
+		sb.WriteString(authRotateTheme.highlight.Render(m.spinner.View()))
+		sb.WriteString(authRotateTheme.normal.Render("Fetching current CA rotation phase"))
+		return sb.String()
 	}
 	var sb strings.Builder
 	sb.WriteString(authRotateTheme.normal.Render("Current rotation phase is "))
@@ -624,12 +642,11 @@ func (m *targetPhaseModel) view() string {
 
 type sendRotateRequestModel struct {
 	client      *authclient.Client
-	spinner     tea.Model
+	spinner     spinner.Model
 	caType      types.CertAuthType
 	targetPhase string
-	complete    bool
+	success     bool
 	err         error
-	tag         sendRotateRequestTag
 }
 
 type sendRotateRequestTag struct{}
@@ -637,7 +654,7 @@ type sendRotateRequestTag struct{}
 func newSendRotateRequestModel(client *authclient.Client, caType types.CertAuthType, targetPhase string) *sendRotateRequestModel {
 	return &sendRotateRequestModel{
 		client:      client,
-		spinner:     spinner.New().Title("Sending CA rotation request"),
+		spinner:     spinner.New(spinner.WithSpinner(spinner.Dot)),
 		caType:      caType,
 		targetPhase: targetPhase,
 	}
@@ -649,37 +666,42 @@ func (m *sendRotateRequestModel) sendRotateRequest() tea.Msg {
 		TargetPhase: m.targetPhase,
 		Mode:        types.RotationModeManual,
 	})
-	return newTaggedMsg(trace.Wrap(err), m.tag)
+	return newTaggedMsg(trace.Wrap(err), sendRotateRequestTag{})
 }
 
 func (m *sendRotateRequestModel) init() tea.Cmd {
-	return tea.Batch(m.sendRotateRequest, m.spinner.Init())
+	return tea.Batch(m.sendRotateRequest, m.spinner.Tick)
 }
 
 func (m *sendRotateRequestModel) update(msg tea.Msg) tea.Cmd {
-	if m.complete {
+	if m.success {
 		return nil
 	}
-	msg, ok := matchTaggedMsg(msg, m.tag)
+	msg, ok := matchTaggedMsg(msg, sendRotateRequestTag{})
 	if !ok {
 		s, cmd := m.spinner.Update(msg)
 		m.spinner = s
 		return cmd
 	}
-	m.complete = true
 	switch msg := msg.(type) {
 	case error:
 		m.err = trace.Wrap(msg)
+	}
+	if m.err == nil {
+		m.success = true
 	}
 	return nil
 }
 
 func (m *sendRotateRequestModel) view() string {
-	if !m.complete {
-		return m.spinner.View()
-	}
 	if m.err != nil {
 		return authRotateTheme.errorMessage.Render("Error sending rotate request:", m.err.Error())
+	}
+	if !m.success {
+		var sb strings.Builder
+		sb.WriteString(authRotateTheme.highlight.Render(m.spinner.View()))
+		sb.WriteString(authRotateTheme.normal.Render("Sending CA rotation request"))
+		return sb.String()
 	}
 	var sb strings.Builder
 	sb.WriteString(authRotateTheme.highlight.Render("✓ "))
@@ -692,6 +714,38 @@ func (m *sendRotateRequestModel) view() string {
 		sb.WriteString(authRotateTheme.normal.Render("."))
 	}
 	return sb.String()
+}
+
+type writerModel struct {
+	style lipgloss.Style
+	buf   []byte
+	mu    sync.Mutex
+}
+
+func newWriterModel(style lipgloss.Style) *writerModel {
+	return &writerModel{style: style}
+}
+
+func (m *writerModel) view() string {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if len(m.buf) == 0 {
+		return ""
+	}
+	// This will always be printed by the caller with writeln, remove trailing
+	// newlines if present.
+	b := m.buf
+	if b[len(b)-1] == '\n' {
+		b = b[:len(b)-1]
+	}
+	return m.style.Render(string(b))
+}
+
+func (m *writerModel) Write(b []byte) (int, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.buf = append(m.buf, b...)
+	return len(b), nil
 }
 
 type waitForReadyModel struct {
@@ -712,7 +766,7 @@ func newWaitForReadyModel(client *authclient.Client, caID types.CertAuthID, targ
 		client:             client,
 		targetPhase:        targetPhase,
 		manualSteps:        manualSteps(caID.Type, targetPhase),
-		acknowledgeBinding: key.NewBinding(key.WithKeys("a"), key.WithHelp("a", "acknowledge all steps have been completed")),
+		acknowledgeBinding: key.NewBinding(key.WithKeys("a"), key.WithHelp("a", "acknowledge all checks have been completed")),
 		skipBinding:        key.NewBinding(key.WithKeys("s"), key.WithHelp("s", "skip all readiness checks (unsafe)")),
 		quitBinding:        key.NewBinding(key.WithKeys("q"), key.WithHelp("q", "quit")),
 		help:               help.New(),
@@ -819,8 +873,12 @@ func (m *waitForReadyModel) view() string {
 		writeln(&sb, manualStep)
 	}
 	if !m.ready() {
+		helpKeys := []key.Binding{m.acknowledgeBinding, m.skipBinding, m.quitBinding}
+		if m.acknowledged {
+			helpKeys = helpKeys[1:]
+		}
 		writeln(&sb, authRotateTheme.normal.PaddingTop(1).Render(
-			m.help.ShortHelpView([]key.Binding{m.acknowledgeBinding, m.skipBinding, m.quitBinding}),
+			m.help.ShortHelpView(helpKeys),
 		))
 	}
 	return sb.String()
@@ -835,7 +893,7 @@ type waitForKindReadyModel struct {
 	desc             string
 	getter           func() ([]rotatable, error)
 	minReady         int
-	spinner          bubblespinner.Model
+	spinner          spinner.Model
 	readyStatus      readyStatus
 	err              error
 	gotFirstResponse bool
@@ -850,7 +908,7 @@ func newWaitForKindReadyModel(targetPhase string, desc string, getter func() ([]
 		targetPhase: targetPhase,
 		desc:        desc,
 		getter:      getter,
-		spinner:     bubblespinner.New(bubblespinner.WithSpinner(bubblespinner.Dot)),
+		spinner:     spinner.New(spinner.WithSpinner(spinner.Dot)),
 	}
 }
 
@@ -1001,7 +1059,7 @@ func updateClientsPhaseHelpText(sb *strings.Builder, caType types.CertAuthType) 
 	case types.OpenSSHCA:
 		sb.WriteString("\nAll new connections to OpenSSH hosts will begin to use certificates issued by the new CA keys.")
 	case types.UserCA:
-		sb.WriteString("All new connections to Windows desktops will begin to use certificates issued by the new CA certificate. ")
+		sb.WriteString("\nAll new connections to Windows desktops will begin to use certificates issued by the new CA certificate. ")
 	case types.DatabaseClientCA:
 		sb.WriteString("\nAll new database connections will begin to use certificates issued by the new CA certificate.")
 	default:
@@ -1043,25 +1101,29 @@ func standbyPhaseHelpText(sb *strings.Builder, caType types.CertAuthType, previo
 
 func manualSteps(caType types.CertAuthType, phase string) []string {
 	const trustedClusterStep = "Wait up to 30 minutes for any root or leaf clusters to follow the rotation."
+	const remoteReloginStep = "If you are currently using tctl remotely and logged in with tsh, you must log out and log back in."
+	const offlineNodesStep = "If any Teleport services may currently be offline, wait for them to come online and follow the rotation."
 	switch caType {
 	case types.HostCA:
 		switch phase {
 		case "init":
-			return []string{trustedClusterStep}
+			return []string{offlineNodesStep, trustedClusterStep}
 		case "update_clients":
-			return []string{trustedClusterStep}
+			return []string{offlineNodesStep, trustedClusterStep, remoteReloginStep}
 		case "update_servers":
 			return []string{
 				"Any OpenSSH hosts must be issued new host certificates signed by the new CA.",
+				offlineNodesStep,
 				trustedClusterStep,
 			}
 		case "rollback":
 			return []string{
 				"Any OpenSSH host certificates reissued during the rotation must be reissued again to revert to the original issuing CA.",
+				offlineNodesStep,
 				trustedClusterStep,
 			}
 		case "standby":
-			return []string{trustedClusterStep}
+			return []string{offlineNodesStep, trustedClusterStep}
 		}
 	case types.OpenSSHCA:
 		switch phase {
@@ -1098,6 +1160,7 @@ func manualSteps(caType types.CertAuthType, phase string) []string {
 			return []string{
 				"Wait up to 30 hours for all user sessions to expire, or else users may have to log out and log back in.",
 				trustedClusterStep,
+				remoteReloginStep,
 			}
 		case "rollback":
 			return []string{
@@ -1186,3 +1249,38 @@ func writeln(sb *strings.Builder, s string) {
 	sb.WriteString(s)
 	sb.WriteByte('\n')
 }
+
+func setupLoggers(logWriter io.Writer) {
+	slog.SetDefault(slog.New(logutils.NewSlogTextHandler(
+		logWriter,
+		logutils.SlogTextHandlerConfig{EnableColors: true},
+	)))
+	logrus.StandardLogger().SetOutput(logWriter)
+}
+
+func setupMFAPrompt(client *authclient.Client, pingResp proto.PingResponse, promptWriter io.Writer) {
+	client.SetMFAPromptConstructor(func(opts ...mfa.PromptOpt) mfa.Prompt {
+		promptCfg := libmfa.NewPromptConfig(pingResp.ProxyPublicAddr, opts...)
+		return libmfa.NewCLIPrompt(&libmfa.CLIPromptConfig{
+			PromptConfig: *promptCfg,
+			Writer:       promptWriter,
+			StdinFunc: func() prompt.StdinReader {
+				return brokenStdinReader{}
+			},
+		})
+	})
+}
+
+var errNoStdin = fmt.Errorf("interactive CA rotation does not support reading passwords from stdin")
+
+// brokenStdinReader implements [prompt.StdinReader] and returns errNoStdin for
+// all methods. Currently this should be unecessary because MFA for admin
+// actions only applies when the only MFA method is webauthn, which should never
+// prompt for a password. If we ever enable MFA for admin actions with OTP,
+// we'll hit this error instead of bubbletea competing for stdin with the
+// password prompt.
+type brokenStdinReader struct{}
+
+func (brokenStdinReader) IsTerminal() bool                               { return true }
+func (brokenStdinReader) ReadContext(_ context.Context) ([]byte, error)  { return nil, errNoStdin }
+func (brokenStdinReader) ReadPassword(_ context.Context) ([]byte, error) { return nil, errNoStdin }
