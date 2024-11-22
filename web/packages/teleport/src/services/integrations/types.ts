@@ -249,10 +249,10 @@ export type PluginOktaSpec = {
 };
 
 export type CredentialsInfo = {
-  hasSSMSToken?: boolean
-  hasOauthCredentials?: boolean
-  hasSCIMToken?: boolean
-}
+  hasSSMSToken?: boolean;
+  hasOauthCredentials?: boolean;
+  hasSCIMToken?: boolean;
+};
 
 export type PluginSlackSpec = {
   fallbackChannel: string;
