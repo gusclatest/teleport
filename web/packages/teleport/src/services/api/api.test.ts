@@ -45,6 +45,10 @@ describe('api.fetch', () => {
     },
   };
 
+  const mfaResp = {
+    webauthn_response: webauthnResp,
+  };
+
   const customOpts = {
     method: 'POST',
     // Override the default header from `defaultRequestOptions`.
