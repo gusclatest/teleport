@@ -2457,13 +2457,15 @@ func (process *TeleportProcess) initAuthService() error {
 		),
 		Emitter:     authServer,
 		AccessPoint: authServer.Services,
+		Clock:       process.Clock,
+		HostID:      cfg.HostUUID,
 	})
 	if err != nil {
 		return trace.Wrap(err)
 	}
 	process.RegisterFunc("auth.expiry", func() error {
 		if err := expiry.Start(); err != nil {
-			logger.ErrorContext(process.ExitContext(),"expiry starting","error",err)
+			logger.ErrorContext(process.ExitContext(), "expiry starting", "error", err)
 		}
 		return trace.Wrap(err)
 	})

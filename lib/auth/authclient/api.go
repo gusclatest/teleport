@@ -816,27 +816,13 @@ type DiscoveryAccessPoint interface {
 	UpsertUserTask(ctx context.Context, req *usertasksv1.UserTask) (*usertasksv1.UserTask, error)
 }
 
-// ReadExpiryAccessPoint is a read only API interface to be
-// used by a teleport.ComponentExpiry.
-//
-// NOTE: This interface must match the resources replicated in cache.ForExpiry.
-type ReadExpiryAccessPoint interface {
-	io.Closer
-}
-
+// ExpiryAccessPoint is the API used by the expiry service.
 type ExpiryAccessPoint interface {
-	// // accessPoint provides common access point functionality
-	// accessPoint
+	// Semaphores provides semaphore operations
+	types.Semaphores
 
-	// NewWatcher returns a new event watcher.
-	NewWatcher(ctx context.Context, watch types.Watch) (types.Watcher, error)
 	// GetAccessRequests gets all currently active access requests.
 	GetAccessRequests(ctx context.Context, filter types.AccessRequestFilter) ([]types.AccessRequest, error)
-	// ListAccessRequests is an access request getter with pagination and sorting options.
-	ListAccessRequests(ctx context.Context, req *proto.ListAccessRequestsRequest) (*proto.ListAccessRequestsResponse, error)
-
-	// CreateAccessRequestV2 stores a new access request.
-	CreateAccessRequestV2(ctx context.Context, req types.AccessRequest) (types.AccessRequest, error)
 
 	// DeleteAccessRequest deletes an access request.
 	DeleteAccessRequest(ctx context.Context, reqID string) error
@@ -1516,44 +1502,6 @@ func (w *DiscoveryWrapper) Close() error {
 	err := w.NoCache.Close()
 	err2 := w.ReadDiscoveryAccessPoint.Close()
 	return trace.NewAggregate(err, err2)
-}
-
-type ExpiryWrapper struct {
-	ReadExpiryAccessPoint
-	services.AccessRequestGetter
-	NoCache ExpiryAccessPoint
-}
-
-func NewExpiryWrapper(base ExpiryAccessPoint, cache ReadExpiryAccessPoint) ExpiryAccessPoint {
-	return &ExpiryWrapper{
-		NoCache:               base,
-		ReadExpiryAccessPoint: cache,
-	}
-}
-
-// NewWatcher returns a new event watcher.
-func (w *ExpiryWrapper) NewWatcher(ctx context.Context, watch types.Watch) (types.Watcher, error) {
-	return w.NoCache.NewWatcher(ctx, watch)
-}
-
-// GetAccessRequests gets all currently active access requests.
-func (w *ExpiryWrapper) GetAccessRequests(ctx context.Context, filter types.AccessRequestFilter) ([]types.AccessRequest, error) {
-	return w.NoCache.GetAccessRequests(ctx, filter)
-}
-
-// ListAccessRequests is an access request getter with pagination and sorting options.
-func (w *ExpiryWrapper) ListAccessRequests(ctx context.Context, req *proto.ListAccessRequestsRequest) (*proto.ListAccessRequestsResponse, error) {
-	return w.NoCache.ListAccessRequests(ctx, req)
-}
-
-// CreateAccessRequestV2 stores a new access request.
-func (w *ExpiryWrapper) CreateAccessRequestV2(ctx context.Context, req types.AccessRequest) (types.AccessRequest, error) {
-	return w.NoCache.CreateAccessRequestV2(ctx, req)
-}
-
-// DeleteAccessRequest deletes an access request.
-func (w *ExpiryWrapper) DeleteAccessRequest(ctx context.Context, reqID string) error {
-	return w.NoCache.DeleteAccessRequest(ctx, reqID)
 }
 
 type OktaWrapper struct {
