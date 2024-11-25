@@ -35,6 +35,7 @@ import (
 
 	"github.com/gravitational/teleport/api/client/proto"
 	machineidv1pb "github.com/gravitational/teleport/api/gen/proto/go/teleport/machineid/v1"
+	workloadidentityv1pb "github.com/gravitational/teleport/api/gen/proto/go/teleport/workloadidentity/v1"
 	"github.com/gravitational/teleport/api/types"
 	apievents "github.com/gravitational/teleport/api/types/events"
 	"github.com/gravitational/teleport/lib/auth/machineid/machineidv1"
@@ -395,6 +396,17 @@ func (a *Server) generateCertsBot(
 		PublicKey: req.PublicTLSKey,
 	}
 
+	// Prepare join attributes for encoding into the X509 cert and for inclusion
+	// in audit logs.
+	joinAttrs := &workloadidentityv1pb.JoinAttrs{
+		Meta: &workloadidentityv1pb.MetaJoinAttrs{
+			JoinMethod: string(joinMethod),
+		},
+	}
+	if joinMethod != types.JoinMethodToken {
+		joinAttrs.Meta.JoinTokenName = provisionToken.GetName()
+	}
+
 	if joinAttributeSrc != nil {
 		attributes, err := joinAttributeSrc.JoinAuditAttributes()
 		if err != nil {
@@ -409,6 +421,8 @@ func (a *Server) generateCertsBot(
 		if err != nil {
 			log.WithError(err).Warn("Unable to encode struct value for join metadata.")
 		}
+
+		// TODO: Extract specific join attributes from join metadata.
 	}
 
 	certs, botInstanceID, err := a.generateInitialBotCerts(
@@ -423,6 +437,7 @@ func (a *Server) generateCertsBot(
 		auth,
 		req.BotInstanceID,
 		req.BotGeneration,
+		joinAttrs,
 	)
 	if err != nil {
 		return nil, trace.Wrap(err)
