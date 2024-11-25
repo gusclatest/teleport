@@ -1,0 +1,92 @@
+// Copyright 2024 Gravitational, Inc
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//      http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+syntax = "proto3";
+
+package teleport.workloadidentity.v1;
+
+option go_package = "github.com/gravitational/teleport/api/gen/proto/go/teleport/workloadidentity/v1;workloadidentityv1pb";
+
+// The collection of attributes that result from the join process.
+message JoinAttrs {
+  // The collection of attributes that result from the join process but are not
+  // specific to any particular join method.
+  MetaJoinAttrs meta = 1;
+  // Attributes that are specific to the GitLab join method.
+  GitLabJoinAttrs gitlab = 2;
+  // Attributes that are specific to the GitHub join method.
+  GitHubJoinAttrs github = 3;
+  // Attributes that are specific to the AWS IAM (`iam`) join method.
+  AWSIAMJoinAttrs iam = 4;
+}
+
+// The collection of attributes that result from the join process but are not
+// specific to any particular join method.
+message MetaJoinAttrs {
+  // The name of the join token that was used to join.
+  //
+  // This field is omitted if the join token that was used to join was of the
+  // `token` method as in this case, the name of the join token is sensitive.
+  //
+  // Example: `my-gitlab-join-token`
+  string join_token_name = 1;
+  // The name of the join method that was used to join.
+  //
+  // Example: `gitlab`
+  string join_method = 2;
+}
+
+// Attributes that are specific to the GitLab join method.
+//
+// Typically, these are mapped directly from the claims of the GitLab JWT that
+// was used to join. You can view the documentation for those claims at:
+// https://docs.gitlab.com/ee/ci/secrets/id_token_authentication.html#token-payload
+message GitLabJoinAttrs {
+  // The `sub` claim of the GitLab JWT that was used to join.
+  // Example: `project_path:mygroup/my-project:ref_type:branch:ref:main`
+  string sub = 1;
+  string ref = 2;
+  string ref_type = 3;
+  bool ref_protected = 4;
+  string namespace_path = 5;
+  string namespace_id = 6;
+  string project_path = 7;
+  string project_id = 8;
+  string user_id = 9;
+  string user_login = 10;
+  // TODO: More of these...
+}
+
+// Attributes that are specific to the GitHub join method.
+//
+// Typically, these are mapped directly from the claims of the GitHub JWT that
+// was used to join. You can view the documentation for those claims at:
+// https://docs.github.com/en/actions/security-for-github-actions/security-hardening-your-deployments/about-security-hardening-with-openid-connect#understanding-the-oidc-token
+message GitHubJoinAttrs {
+  // The `sub` claim of the GitHub JWT that was used to join.
+  string sub = 1;
+  // The username of the actor that initiated the workflow run.
+  string actor = 2;
+  // TODO: More of these...
+}
+
+// Attributes that are specific to the AWS IAM (`iam`) join method.
+//
+// Typically, these are mapped directly from the results of the
+// STS GetCallerIdentity call that is made as part of the join process.
+message AWSIAMJoinAttrs {
+  string account = 1;
+  string arn = 2;
+  // TODO: More of these...
+}
