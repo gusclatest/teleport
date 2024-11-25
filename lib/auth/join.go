@@ -27,9 +27,12 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/go-jose/go-jose/v3/json"
 	"github.com/gravitational/trace"
 	"github.com/sirupsen/logrus"
 	"google.golang.org/grpc/peer"
+	"google.golang.org/protobuf/encoding/protojson"
+	proto2 "google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/structpb"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
@@ -331,6 +334,10 @@ func (a *Server) RegisterUsingToken(ctx context.Context, req *types.RegisterUsin
 	return certs, trace.Wrap(err)
 }
 
+type joinAttrSource interface {
+	SetJoinAttrs(in *workloadidentityv1pb.JoinAttrs) proto2.Message
+}
+
 func (a *Server) generateCertsBot(
 	ctx context.Context,
 	provisionToken types.ProvisionToken,
@@ -407,6 +414,33 @@ func (a *Server) generateCertsBot(
 		joinAttrs.Meta.JoinTokenName = provisionToken.GetName()
 	}
 
+	if v, ok := joinAttributeSrc.(joinAttrSource); ok {
+		out := v.SetJoinAttrs(joinAttrs)
+
+		// Marshal to JSON, so it can be unmarshaled into the loose
+		// GoGo Struct used by audit events, and, the Google proto Struct used
+		// by BotInstanceStatusAuthentication
+		marshaledAttrs, err := protojson.Marshal(out)
+		if err != nil {
+			panic(err)
+		}
+
+		instanceStruct := &structpb.Struct{}
+		err = protojson.Unmarshal(marshaledAttrs, instanceStruct)
+		if err != nil {
+			panic(err)
+		}
+		auth.Metadata = instanceStruct
+
+		auditStruct := &apievents.Struct{}
+		err = json.Unmarshal(marshaledAttrs, auditStruct)
+		if err != nil {
+			panic(err)
+		}
+		joinEvent.Attributes = auditStruct
+	}
+
+	// TODO: Delete legacy
 	if joinAttributeSrc != nil {
 		attributes, err := joinAttributeSrc.JoinAuditAttributes()
 		if err != nil {
@@ -421,9 +455,8 @@ func (a *Server) generateCertsBot(
 		if err != nil {
 			log.WithError(err).Warn("Unable to encode struct value for join metadata.")
 		}
-
-		// TODO: Extract specific join attributes from join metadata.
 	}
+	// END TODO: Delete legacy
 
 	certs, botInstanceID, err := a.generateInitialBotCerts(
 		ctx,
