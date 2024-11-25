@@ -61,9 +61,7 @@ function TestWizard(props: Partial<DeleteAuthDeviceWizardStepProps>) {
   return (
     <ContextProvider ctx={ctx}>
       <DeleteAuthDeviceWizard
-        devices={deviceCases.all}
         deviceToDelete={dummyPasskey}
-        auth2faType="on"
         onClose={() => {}}
         onSuccess={onSuccess}
         {...props}

@@ -18,8 +18,8 @@
 
 import React from 'react';
 
-import { State } from './useReAuthenticate';
-import { ReAuthenticate } from './ReAuthenticate';
+import { Props, ReAuthenticate } from './ReAuthenticate';
+import { DeviceType, getMfaRegisterOptions } from 'teleport/services/mfa';
 
 export default {
   title: 'Teleport/ReAuthenticate',
@@ -38,13 +38,11 @@ export const Failed = () => (
   />
 );
 
-const props: State = {
+const props: Props = {
   attempt: { status: '' },
   clearAttempt: () => null,
-  submitWithTotp: () => null,
-  submitWithWebauthn: () => null,
-  preferredMfaType: 'webauthn',
+  getMfaChallenge: () => null,
+  getMfaChallengeOptions: async () => getMfaRegisterOptions('on'),
+  submitWithMfa: (mfaType?: DeviceType, totp_code?: string) => null,
   onClose: () => null,
-  auth2faType: 'on',
-  actionText: 'performing this action',
 };

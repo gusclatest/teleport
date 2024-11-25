@@ -23,7 +23,7 @@ import Dialog from 'design/Dialog';
 import { createTeleportContext } from 'teleport/mocks/contexts';
 import { ContextProvider } from 'teleport/index';
 
-import { MfaDevice } from 'teleport/services/mfa';
+import { DeviceType, MfaDevice } from 'teleport/services/mfa';
 
 import {
   DeleteAuthDeviceWizardStepProps,
@@ -100,12 +100,15 @@ const stepProps: DeleteAuthDeviceWizardStepProps = {
   flowLength: 2,
   refCallback: () => {},
 
-  // Other props
-  devices: [dummyHardwareDevice, dummyPasskey],
+  // Delete props
   deviceToDelete: dummyPasskey,
   privilegeToken: 'privilege-token',
-  auth2faType: 'optional',
-  onAuthenticated: () => {},
   onClose: () => {},
   onSuccess: () => {},
+
+  // Other props
+  reauthAttempt: null,
+  clearReauthAttempt: () => {},
+  mfaChallengeOptions: null,
+  submitWithMfa: async (mfaType?: DeviceType, otpCode?: string) => {},
 };

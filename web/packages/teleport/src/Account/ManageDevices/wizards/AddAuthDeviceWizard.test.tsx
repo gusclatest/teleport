@@ -52,6 +52,10 @@ beforeEach(() => {
   jest
     .spyOn(auth, 'createPrivilegeTokenWithWebauthn')
     .mockResolvedValueOnce('webauthn-privilege-token');
+  jest.spyOn(auth, 'getMfaChallenge').mockResolvedValueOnce({
+    totpChallenge: true,
+    webauthnPublicKey: {} as PublicKeyCredentialRequestOptions,
+  });
   jest
     .spyOn(auth, 'createPrivilegeTokenWithTotp')
     .mockImplementationOnce(token =>
@@ -74,7 +78,6 @@ function TestWizard(props: Partial<AddAuthDeviceWizardStepProps> = {}) {
       <AddAuthDeviceWizard
         usage="passwordless"
         auth2faType="optional"
-        devices={deviceCases.all}
         onClose={() => {}}
         onSuccess={onSuccess}
         {...props}
@@ -243,10 +246,8 @@ describe('flow with reauthentication', () => {
     expect(onSuccess).toHaveBeenCalled();
   });
 
-  test('shows all authentication options', async () => {
-    render(
-      <TestWizard usage="mfa" auth2faType="on" devices={deviceCases.all} />
-    );
+  test('shows reauthentication options', async () => {
+    render(<TestWizard usage="mfa" />);
 
     const reauthenticateStep = within(
       screen.getByTestId('reauthenticate-step')
@@ -258,40 +259,4 @@ describe('flow with reauthentication', () => {
       reauthenticateStep.queryByLabelText(/authenticator app/i)
     ).toBeVisible();
   });
-
-  test('limits authentication options to devices owned', async () => {
-    render(
-      <TestWizard usage="mfa" auth2faType="on" devices={deviceCases.authApps} />
-    );
-
-    const reauthenticateStep = within(
-      screen.getByTestId('reauthenticate-step')
-    );
-    expect(
-      reauthenticateStep.queryByLabelText(/passkey or security key/i)
-    ).not.toBeInTheDocument();
-    expect(
-      reauthenticateStep.queryByLabelText(/authenticator app/i)
-    ).toBeVisible();
-  });
-
-  test.each`
-    auth2faType   | deviceCase      | error
-    ${'otp'}      | ${'mfaDevices'} | ${/authenticator app is required/i}
-    ${'webauthn'} | ${'authApps'}   | ${/passkey or security key is required/i}
-    ${'on'}       | ${'none'}       | ${/identity verification is required/i}
-  `(
-    'shows an error if no way to authenticate for MFA type "$auth2faType"',
-    async ({ auth2faType, deviceCase, error }) => {
-      render(
-        <TestWizard
-          usage="mfa"
-          auth2faType={auth2faType}
-          devices={deviceCases[deviceCase]}
-        />
-      );
-
-      expect(screen.getByText(error)).toBeVisible();
-    }
-  );
 });
