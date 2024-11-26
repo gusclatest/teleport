@@ -21,7 +21,6 @@ package gitlab
 import (
 	"github.com/gravitational/trace"
 	"github.com/mitchellh/mapstructure"
-	"google.golang.org/protobuf/proto"
 
 	workloadidentityv1pb "github.com/gravitational/teleport/api/gen/proto/go/teleport/workloadidentity/v1"
 )
@@ -133,11 +132,10 @@ func (c *IDTokenClaims) JoinAuditAttributes() (map[string]interface{}, error) {
 	return res, nil
 }
 
-func (c *IDTokenClaims) SetJoinAttrs(in *workloadidentityv1pb.JoinAttrs) proto.Message {
+func (c *IDTokenClaims) JoinAttrs() *workloadidentityv1pb.GitLabJoinAttrs {
 	attrs := &workloadidentityv1pb.GitLabJoinAttrs{
 		Sub: c.Sub,
-		// TODO: the rest of the fields.
 	}
-	in.Gitlab = attrs
+
 	return attrs
 }
