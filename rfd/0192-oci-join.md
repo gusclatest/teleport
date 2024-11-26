@@ -12,13 +12,21 @@ state: draft
 ## What
 
 Add the ability for Teleport agents running on Oracle Cloud instances to join
-a cluster without a shared secret.
+a cluster without a static token.
 
 ## Why
+
+This feature removes the need to use a shared secret to establish trust between
+a Teleport cluster and an Oracle Cloud compute instance.
 
 ## Details
 
 ### Glossary
+
+- **OCI** - Oracle Cloud Infrastructure. Interchangeable with Oracle Cloud in this document.
+- **OCID** - Oracle Cloud Identifier. Unique ID associated with all Oracle Cloud resources.
+- **Tenancy** / **Tenant** - Oracle equivalent of an AWS account/Azure subscription/etc.
+- **Compartment** - Logical grouping of resources. Equivalent to an Azure resource group.
 
 ### UX
 
@@ -41,7 +49,7 @@ spec:
         # instances can join from.
 ```
 
-She would then create the token:
+She would then create the provision token:
 
 ```sh
 $ tctl create token.yaml
@@ -50,27 +58,17 @@ $ tctl create token.yaml
 Next, Alice would install Teleport on her instance, then configure it:
 
 ```sh
-$ teleport configure --token ci-token --proxy example.com
+$ teleport node configure --token oci-token --join-method oracle --proxy example.com
 ```
 
-Then she would edit the created `teleport.yaml` file with the correct join method:
-
-```diff
-# teleport.yaml
-# ...
-join_params:
-    token_name: oci-token
--   method: token
-+   method: oracle
-  proxy_server: example.com
-# ...
-```
-
-Finally, Alice would start Teleport on the instance. She can confirm that the node has joined either in the web UI or by running `tsh ls`.
+Finally, Alice would start Teleport on the instance. She can confirm that the
+node has joined either in the web UI or by running `tsh ls`.
 
 ### Implementation
 
 #### Token spec
+
+The provision token will be extended to include a new `oracle` section:
 
 ```yaml
 kind: token
@@ -98,35 +96,65 @@ spec:
 
 #### Join process
 
-When a node starts the join process, it first fetches credentials for its
+When a node initiates the Oracle join method:
+
+- The node first fetches credentials for its
 [instance principal](https://docs.oracle.com/en-us/iaas/Content/Identity/Tasks/callingservicesfrominstances.htm#concepts)
-via the Oracle instance metadata service. With those credentials, the node will
-create a [signed HTTP request](https://docs.oracle.com/en-us/iaas/Content/API/Concepts/signingrequests.htm)
-to the Oracle Cloud API to fetch the compartment the instance is in. This will
-be at `https://iaas.{region}.oraclecloud.com/{api version}/compartment/{compartment's OCID}`. The node will then make a `RegisterUsingToken` request to the auth server and sends the URL and headers of the signed request as JSON-encoded parameters (the auth server will be able to recreate the rest of the request).
+via the Oracle instance metadata service.
+- With those credentials, the node will create a
+[signed HTTP request](https://docs.oracle.com/en-us/iaas/Content/API/Concepts/signingrequests.htm)
+to the Oracle Cloud API to fetch the compartment the instance is in, at
+`https://iaas.{region}.oraclecloud.com/{api version}/compartment/{compartment's OCID}`.
+The instance's principal does not need any additional permissions to make this request.
+- The node will then make a `RegisterUsingToken` request to the auth server and
+sends the URL and headers of the signed request as parameters (the auth server
+will be able to recreate the rest of the request).
 
-When the auth server receives the `RegisterUsingToken` request, it first extracts
-the key ID from the provided Authorization header. The key ID is a string that
-Oracle uses to identify the caller. For instance principals, the key ID is a JWT prefixed by the string `ST$` (unfortunately I could not find docs that back this up, I determined this experimentally). The auth server decodes the JWT and maps the claims `opc-tenant`, `opc-compartment`, and `opc-instance` to the instances tenancy ID, compartment ID, and instance ID respectively.
+When the auth server receives a `RegisterUsingToken` request for the Oracle join method:
 
-The auth server verifies that the compartment ID and region in the provided API URL match the compartment ID and region from the claims (the region can be extracted from the instance ID). Then the auth server reconstructs and performs the API request; if Oracle accepts it, the auth server validates the tenancy ID, compartment ID (or name, acquired from the API request), and region agains the Teleport join token. If that passes, the node is allowed to join the cluster.
+- The auth server extracts the key ID from the provided Authorization header. The key
+ID is a string that Oracle uses to identify the caller. For instance principals,
+the key ID is a JWT prefixed by the string `ST$` (unfortunately I could not
+find docs that back this up, I found this experimentally).
+- The auth server decodes the JWT and maps the claims `opc-tenant`,
+`opc-compartment`, and `opc-instance` to the instance's tenancy ID, compartment
+ID, and instance ID respectively.
+- The auth server verifies that the compartment ID and region in the provided
+API URL match the compartment ID and region from the claims (the region can be
+extracted from the instance ID).
+- The auth server reconstructs and performs the API request; if Oracle accepts
+it, the auth server validates the tenancy ID, compartment ID (or name, found in
+the API response), and region against the Teleport provision token. If that
+passes, the node is allowed to join the cluster.
 
 #### Limitations
 
-The Oracle join tokens will not support nested compartments, i.e. if compartment `foo` has a child compartment `bar` and the join token has `compartments: ["foo"]`, this will not allow instances in container `bar` to join. This is for simplicity's sake; Teleport would need to make several requests to the Oracle Cloud API to walk up the compartment tree from the compartment the instance is in, each of which would need to be signed. This would require a complicated back-and-forth between the auth server and the joining node to get signed requests for each compartment.
+The Oracle provision tokens will not support nested compartments, i.e. if
+compartment `foo` has a child compartment `bar` and the provision token has
+`compartments: ["foo"]`, this will not allow instances in container `bar` to
+join. This is for simplicity's sake; Teleport would need to make several
+requests to the Oracle Cloud API to walk up the compartment tree from the
+compartment the instance is in, each of which would need to be signed. This
+would require a complicated back-and-forth between the auth server and the
+joining node to get signed requests for each compartment.
 
 ### Security
 
-Teleport will not at any point verify the claims in the key ID JWT provided by the instance. This is because the needed JWKs will always be behind a [non-public, tenant-specific API](https://docs.oracle.com/en-us/iaas/Content/APIGateway/Tasks/apigatewayusingjwttokens.htm#identityprovider). Instead, Teleport will trust the response from the Oracle Cloud API to know if it can trust the claims.
+Teleport will not at any point verify the claims in the key ID JWT provided by
+the instance. This is because the needed JWKs will always be behind a
+[non-public API](https://docs.oracle.com/en-us/iaas/Content/APIGateway/Tasks/apigatewayusingjwttokens.htm#identityprovider).
+Instead, Teleport will trust the response from the Oracle Cloud API to know if
+it can trust the claims.
 
 ### Proto Specification
 
-Extend `RegisterUsingTokenRequest` to accept 
+Extend `RegisterUsingTokenRequest` to accept parameters needed for the signed API request:
 
 ```proto
 message RegisterUsingTokenRequest {
     // Existing fields...
-    OracleParams OracleParams = 15; // TODO name
+
+    OracleParams OracleParams = 15;
 }
 
 message OracleParams {
@@ -135,11 +163,12 @@ message OracleParams {
 }
 ```
 
-extension to join tokens
+Extend provision tokens to include roles for joining Oracle instances:
 
 ```proto
 message ProvisionTokenSpecV2 {
     // Existing fields...
+
     ProvisionTokenSpecV2Oracle Oracle = 17;
 }
 
@@ -156,16 +185,21 @@ message ProvisionTokenSpecV2Oracle {
 
 ### Audit Events
 
-already covered by InstanceJoin and ProvisionTokenCreate
-
-### Observability
-
-### Product Usage
+Tokens created with the `oracle` join method and instances joining via Oracle
+tokens will be captured by the existing `ProvisionTokenCreate` and `InstanceJoin`
+events, respectively.
 
 ### Backwards Compatibility
 
+Suppose Oracle join is released in Teleport version *X*. The expected behavior
+of agents with mixed versions is as follows:
+
+|  | Auth <X | Auth >=X |
+|---|---|---|
+| Node <X | Irrelevant | Node will not launch with unrecognized join method |
+| Node >=X | Join will be rejected for unrecognized join method | Join works |
+
 ### Test Plan
 
-links:
-- https://docs.oracle.com/en-us/iaas/Content/API/Concepts/signingrequests.htm
-- https://docs.oracle.com/en-us/iaas/Content/Identity/Tasks/callingservicesfrominstances.htm
+Add an entry to the test plan to verify that the Oracle join method works as
+described in the docs, just like the other join methods.
