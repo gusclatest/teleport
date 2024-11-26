@@ -67,6 +67,9 @@ func (c *Config) CheckAndSetDefaults() error {
 	if c.AccessPoint == nil {
 		return trace.BadParameter("no AccessPoint configured for expiry")
 	}
+	if c.Clock == nil {
+		return trace.BadParameter("no Clock configured for expiry")
+	}
 	return nil
 }
 
@@ -126,7 +129,7 @@ func (s *Service) Start() error {
 			select {
 			case <-s.ctx.Done():
 				return
-			case <-time.After(retryutils.HalfJitter(expiryInterval)):
+			case <-s.Clock.After(retryutils.SeventhJitter(expiryInterval)):
 				lease, err := services.AcquireSemaphoreLockWithRetry(
 					s.ctx,
 					semCfg,
@@ -158,12 +161,11 @@ func (s *Service) Start() error {
 			}
 		}
 	}()
-
 	for {
 		select {
 		case <-s.ctx.Done():
 			return nil
-		case <-time.After(retryutils.HalfJitter(scanInterval)):
+		case <-s.Clock.After(retryutils.SeventhJitter(scanInterval)):
 			lease, err := services.AcquireSemaphoreLockWithRetry(
 				s.ctx,
 				semCfg,
@@ -176,7 +178,6 @@ func (s *Service) Start() error {
 			if err != nil {
 				return trace.Wrap(err)
 			}
-
 			if err := s.processAccessRequests(s.ctx, requests); err != nil {
 				s.Log.WarnContext(s.ctx, "error expiring access requests", "error", err)
 			}
