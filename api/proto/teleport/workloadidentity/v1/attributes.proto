@@ -65,6 +65,20 @@ message GitLabJoinAttrs {
   string project_id = 8;
   string user_id = 9;
   string user_login = 10;
+  string user_email = 11;
+  string pipeline_id = 12;
+  string pipeline_source = 13;
+  string ref_path = 14;
+  string environment = 15;
+  bool environment_protected = 16;
+  string deployment_tier = 17;
+  string environment_action = 18;
+  uint32 runner_id = 19;
+  string runner_environment = 20;
+  string sha = 21;
+  string ci_config_ref_uri = 22;
+  string ci_config_ref = 23;
+  string jti = 24;
   // TODO: More of these...
 }
 
