@@ -53,6 +53,7 @@ import (
 
 const (
 	updateInterval = 3 * time.Second
+	maxWidth       = 80
 )
 
 type authRotateCommand struct {
@@ -566,7 +567,7 @@ func (m *currentPhaseModel) view() string {
 	sb.WriteString(authRotateTheme.highlight.Render(m.phase))
 	sb.WriteString(authRotateTheme.normal.Render("."))
 	if remaining := remainingPhases(m.phase); len(remaining) > 0 {
-		sb.WriteString(authRotateTheme.normal.Render(" (Remaining phases: "))
+		sb.WriteString(authRotateTheme.normal.Render("\nRemaining phases: "))
 		for len(remaining) > 1 {
 			phase := remaining[0]
 			remaining = remaining[1:]
@@ -574,7 +575,7 @@ func (m *currentPhaseModel) view() string {
 			sb.WriteString(authRotateTheme.normal.Render(", "))
 		}
 		sb.WriteString(authRotateTheme.highlight.Render(remaining[0]))
-		sb.WriteString(authRotateTheme.normal.Render(")"))
+		sb.WriteString(authRotateTheme.normal.Render("."))
 	}
 	return sb.String()
 }
@@ -634,7 +635,7 @@ func (m *targetPhaseModel) view() string {
 	sb.WriteString(authRotateTheme.normal.Render("Target rotation phase is "))
 	sb.WriteString(authRotateTheme.highlight.Render(m.targetPhase))
 	writeln(&sb, authRotateTheme.normal.Render("."))
-	sb.WriteString(authRotateTheme.normal.Width(80).
+	sb.WriteString(authRotateTheme.normal.Width(maxWidth).
 		MarginTop(1).MarginBottom(1).MarginLeft(2).
 		Render(phaseHelpText(m.caType, m.currentPhase, m.targetPhase)))
 	return sb.String()
@@ -766,8 +767,8 @@ func newWaitForReadyModel(client *authclient.Client, caID types.CertAuthID, targ
 		client:             client,
 		targetPhase:        targetPhase,
 		manualSteps:        manualSteps(caID.Type, targetPhase),
-		acknowledgeBinding: key.NewBinding(key.WithKeys("a"), key.WithHelp("a", "acknowledge all checks have been completed")),
-		skipBinding:        key.NewBinding(key.WithKeys("s"), key.WithHelp("s", "skip all readiness checks (unsafe)")),
+		acknowledgeBinding: key.NewBinding(key.WithKeys("a"), key.WithHelp("a", "acknowledge manual steps completed")),
+		skipBinding:        key.NewBinding(key.WithKeys("s"), key.WithHelp("s", "skip all checks (unsafe)")),
 		quitBinding:        key.NewBinding(key.WithKeys("q"), key.WithHelp("q", "quit")),
 		help:               help.New(),
 	}
@@ -869,8 +870,10 @@ func (m *waitForReadyModel) view() string {
 		manualStepPrefix = authRotateTheme.highlight.Render("✓ ")
 	}
 	for _, manualStep := range m.manualSteps {
-		sb.WriteString(manualStepPrefix)
-		writeln(&sb, manualStep)
+		writeln(&sb, lipgloss.JoinHorizontal(0,
+			manualStepPrefix,
+			authRotateTheme.normal.Width(maxWidth-2).Render(manualStep),
+		))
 	}
 	if !m.ready() {
 		helpKeys := []key.Binding{m.acknowledgeBinding, m.skipBinding, m.quitBinding}
@@ -977,8 +980,14 @@ func (m *waitForKindReadyModel) view() string {
 	}
 	if m.ready() {
 		var sb strings.Builder
-		sb.WriteString(authRotateTheme.highlight.Render("✓"))
-		sb.WriteString(authRotateTheme.normal.Render(" All "))
+		sb.WriteString(authRotateTheme.highlight.Render("✓ "))
+		if m.readyStatus.totalCount == 0 {
+			sb.WriteString(authRotateTheme.normal.Render("No "))
+			sb.WriteString(authRotateTheme.highlight.Render(m.desc))
+			sb.WriteString(authRotateTheme.normal.Render(" found."))
+			return sb.String()
+		}
+		sb.WriteString(authRotateTheme.normal.Render("All "))
 		sb.WriteString(authRotateTheme.highlight.Render(m.desc))
 		sb.WriteString(authRotateTheme.normal.Render(" are in the "))
 		sb.WriteString(authRotateTheme.highlight.Render(m.targetPhase))
@@ -1175,15 +1184,21 @@ func manualSteps(caType types.CertAuthType, phase string) []string {
 		}
 	case types.DatabaseCA:
 		switch phase {
-		case "update_servers":
-			return []string{"All self-hosted databases must be issued new certificates signed by the new CA."}
+		case "init":
+			return []string{
+				"If you also need to rotate the db_client CA, rotate it to the init phase now to reconfigure self-hosted databases with new server certificates and trusted client CAs simultaneously.",
+				"All self-hosted databases must be issued new certificates signed by the new CA.",
+			}
 		case "rollback":
 			return []string{"Any self-hosted database certificates reissued during the rotation must be reissued again to revert to the original issuing CA."}
 		}
 	case types.DatabaseClientCA:
 		switch phase {
 		case "init":
-			return []string{"All self-hosted databases must be updated to trust both the new and old CA certificates."}
+			return []string{
+				"If you also need to rotate the db_client CA, rotate it to the init phase now to reconfigure self-hosted databases with new server certificates and trusted client CAs simultaneously.",
+				"All self-hosted databases must be updated to trust both the new and old CA certificates.",
+			}
 		case "standby":
 			return []string{"All self-hosted databases should be updated to stop trusting the CA certificates that have now been rotated out."}
 		}
