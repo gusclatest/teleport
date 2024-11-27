@@ -242,6 +242,7 @@ var eventsMap = map[string]apievents.AuditEvent{
 	AutoUpdateVersionCreateEvent:                &apievents.AutoUpdateVersionCreate{},
 	AutoUpdateVersionUpdateEvent:                &apievents.AutoUpdateVersionUpdate{},
 	AutoUpdateVersionDeleteEvent:                &apievents.AutoUpdateVersionDelete{},
+	AccessRequestExpireEvent:                    &apievents.AccessRequestExpire{},
 }
 
 // TestJSON tests JSON marshal events
