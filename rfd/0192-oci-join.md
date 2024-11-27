@@ -79,18 +79,21 @@ spec:
   roles: [Node, Kube, Db]
   oracle:
     allow:
-        # OCID of the tenancy to allow instances to join from.
+        # OCID of the tenancy to allow instances to join from. Required.
       - tenancy: "ocid1.tenancy.oc1..<unique ID>"
-        # Compartments to allow instances to join from. May be specified by name
-        # or by OCID. If compartments is empty or a wildcard, instances can join
-        # from any compartment in the tenancy.
-        compartments: ["my_compartment", "ocid1.compartment.oc1...<unique_ID>"]
+        # Compartments to allow instances to join from. Only the direct parent
+        # compartment applies; i.e. nested compartments are not taken into account.
+        # May be specified by name or by OCID. If compartments is empty or a wildcard,
+        # instances can join from any compartment in the tenancy.
+        parent_compartments: ["my_compartment", "ocid1.compartment.oc1...<unique_ID>"]
         # Regions to allow instances to join from. Both full names ("us-phoenix-1")
         # and abbreviations ("phx") are allowed. If regions is empty or
         # a wildcard, instances can join from any region.
         regions: ["phx", "us-ashburn-1"]
-      - tenancy: "..."
         # Add more entries as necessary.
+      - tenancy: "..."
+        parent_compartments: ["foo", "bar"]
+        regions: ["baz", "quux"]
         # ...
 ```
 
@@ -131,7 +134,7 @@ passes, the node is allowed to join the cluster.
 
 The Oracle provision tokens will not support nested compartments, i.e. if
 compartment `foo` has a child compartment `bar` and the provision token has
-`compartments: ["foo"]`, this will not allow instances in container `bar` to
+`parent_compartments: ["foo"]`, this will not allow instances in container `bar` to
 join. This is for simplicity's sake; Teleport would need to make several
 requests to the Oracle Cloud API to walk up the compartment tree from the
 compartment the instance is in, each of which would need to be signed. This
@@ -140,8 +143,10 @@ joining node to get signed requests for each compartment.
 
 ### Security
 
-Teleport will not at any point verify the claims in the key ID JWT provided by
-the instance. This is because the needed JWKs will always be behind a
+Teleport will sanitize the claims in the key ID JWT provided by the instance
+to ensure that they are
+[properly formed OCIDs](https://docs.oracle.com/en-us/iaas/Content/General/Concepts/identifiers.htm).
+Beyond that, Teleport will not verify the claims. This is because the needed JWKs will always be behind a
 [non-public API](https://docs.oracle.com/en-us/iaas/Content/APIGateway/Tasks/apigatewayusingjwttokens.htm#identityprovider).
 Instead, Teleport will trust the response from the Oracle Cloud API to know if
 it can trust the claims.
@@ -175,7 +180,7 @@ message ProvisionTokenSpecV2 {
 message ProvisionTokenSpecV2Oracle {
     message Rule {
         string Tenancy = 1;
-        repeated string Compartments = 2;
+        repeated string ParentCompartments = 2;
         repeated string Regions = 3;
     }
 
