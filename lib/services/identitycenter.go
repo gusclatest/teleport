@@ -23,6 +23,7 @@ import (
 	"google.golang.org/protobuf/types/known/emptypb"
 
 	identitycenterv1 "github.com/gravitational/teleport/api/gen/proto/go/teleport/identitycenter/v1"
+	"github.com/gravitational/teleport/api/types"
 	"github.com/gravitational/teleport/lib/utils/pagination"
 )
 
@@ -49,7 +50,7 @@ type IdentityCenterAccount struct {
 }
 
 // CloneResource creates a deep copy of the underlying account resource
-func (a IdentityCenterAccount) CloneResource() IdentityCenterAccount {
+func (a IdentityCenterAccount) CloneResource() types.Resource153 {
 	return IdentityCenterAccount{
 		Account: proto.Clone(a.Account).(*identitycenterv1.Account),
 	}

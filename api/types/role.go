@@ -1922,6 +1922,9 @@ func (r *RoleV6) GetLabelMatchers(rct RoleConditionType, kind string) (LabelMatc
 		return LabelMatchers{cond.WindowsDesktopLabels, cond.WindowsDesktopLabelsExpression}, nil
 	case KindUserGroup:
 		return LabelMatchers{cond.GroupLabels, cond.GroupLabelsExpression}, nil
+	case KindIdentityCenter,
+		KindIdentityCenterAccount:
+		return LabelMatchers{cond.AccountAssignmentLabels, cond.AccountAssignmentLabelsExpression}, nil
 	}
 	return LabelMatchers{}, trace.BadParameter("can't get label matchers for resource kind %q", kind)
 }
@@ -2249,4 +2252,8 @@ func (h *CreateDatabaseUserMode) UnmarshalJSON(data []byte) error {
 // IsEnabled returns true if database automatic user provisioning is enabled.
 func (m CreateDatabaseUserMode) IsEnabled() bool {
 	return m != CreateDatabaseUserMode_DB_USER_MODE_UNSPECIFIED && m != CreateDatabaseUserMode_DB_USER_MODE_OFF
+}
+
+func (a IdentityCenterAccountAssignment) GetAccount() string {
+	return a.Account
 }

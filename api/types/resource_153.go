@@ -21,6 +21,7 @@ import (
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	headerv1 "github.com/gravitational/teleport/api/gen/proto/go/teleport/header/v1"
+	"github.com/gravitational/teleport/api/utils"
 )
 
 // ResourceMetadata is the smallest interface that defines a Teleport resource.
@@ -116,12 +117,13 @@ func (r *legacyToResource153Adapter) GetVersion() string {
 }
 
 // Resource153ToLegacy transforms an RFD 153 style resource into a legacy
-// [Resource] type.
+// [Resource] type. Implements [ResourceWithLabels] and CloneResource (where the)
+// wrapped resource supports cloning).
 //
 // Note that CheckAndSetDefaults is a noop for the returned resource and
 // SetSubKind is not implemented and panics on use.
-func Resource153ToLegacy(r Resource153) Resource {
-	return &resource153ToLegacyAdapter{inner: r}
+func Resource153ToLegacy(r Resource153) *Resource153ToLegacyAdapter {
+	return &Resource153ToLegacyAdapter{inner: r}
 }
 
 // Resource153Unwrapper returns a legacy [Resource] type from a wrapped RFD
@@ -130,7 +132,9 @@ type Resource153Unwrapper interface {
 	Unwrap() Resource153
 }
 
-type resource153ToLegacyAdapter struct {
+// Resource153ToLegacyAdapter wraps a new-style resource in a type implementing
+// the legacy resource interfaces
+type Resource153ToLegacyAdapter struct {
 	inner Resource153
 }
 
@@ -138,17 +142,17 @@ type resource153ToLegacyAdapter struct {
 // the codebase as a legacy Resource.
 //
 // Ideally you shouldn't depend on this.
-func (r *resource153ToLegacyAdapter) Unwrap() Resource153 {
+func (r *Resource153ToLegacyAdapter) Unwrap() Resource153 {
 	return r.inner
 }
 
 // MarshalJSON adds support for marshaling the wrapped resource (instead of
 // marshaling the adapter itself).
-func (r *resource153ToLegacyAdapter) MarshalJSON() ([]byte, error) {
+func (r *Resource153ToLegacyAdapter) MarshalJSON() ([]byte, error) {
 	return json.Marshal(r.inner)
 }
 
-func (r *resource153ToLegacyAdapter) Expiry() time.Time {
+func (r *Resource153ToLegacyAdapter) Expiry() time.Time {
 	expires := r.inner.GetMetadata().Expires
 	// return zero time.time{} for zero *timestamppb.Timestamp, instead of 01/01/1970.
 	if expires == nil {
@@ -158,11 +162,11 @@ func (r *resource153ToLegacyAdapter) Expiry() time.Time {
 	return expires.AsTime()
 }
 
-func (r *resource153ToLegacyAdapter) GetKind() string {
+func (r *Resource153ToLegacyAdapter) GetKind() string {
 	return r.inner.GetKind()
 }
 
-func (r *resource153ToLegacyAdapter) GetMetadata() Metadata {
+func (r *Resource153ToLegacyAdapter) GetMetadata() Metadata {
 	md := r.inner.GetMetadata()
 
 	// use zero time.time{} for zero *timestamppb.Timestamp, instead of 01/01/1970.
@@ -181,34 +185,83 @@ func (r *resource153ToLegacyAdapter) GetMetadata() Metadata {
 	}
 }
 
-func (r *resource153ToLegacyAdapter) GetName() string {
+func (r *Resource153ToLegacyAdapter) GetName() string {
 	return r.inner.GetMetadata().Name
 }
 
-func (r *resource153ToLegacyAdapter) GetRevision() string {
+func (r *Resource153ToLegacyAdapter) GetRevision() string {
 	return r.inner.GetMetadata().Revision
 }
 
-func (r *resource153ToLegacyAdapter) GetSubKind() string {
+func (r *Resource153ToLegacyAdapter) GetSubKind() string {
 	return r.inner.GetSubKind()
 }
 
-func (r *resource153ToLegacyAdapter) GetVersion() string {
+func (r *Resource153ToLegacyAdapter) GetVersion() string {
 	return r.inner.GetVersion()
 }
 
-func (r *resource153ToLegacyAdapter) SetExpiry(t time.Time) {
+func (r *Resource153ToLegacyAdapter) SetExpiry(t time.Time) {
 	r.inner.GetMetadata().Expires = timestamppb.New(t)
 }
 
-func (r *resource153ToLegacyAdapter) SetName(name string) {
+func (r *Resource153ToLegacyAdapter) SetName(name string) {
 	r.inner.GetMetadata().Name = name
 }
 
-func (r *resource153ToLegacyAdapter) SetRevision(rev string) {
+func (r *Resource153ToLegacyAdapter) SetRevision(rev string) {
 	r.inner.GetMetadata().Revision = rev
 }
 
-func (r *resource153ToLegacyAdapter) SetSubKind(subKind string) {
+func (r *Resource153ToLegacyAdapter) SetSubKind(subKind string) {
 	panic("interface Resource153 does not implement SetSubKind")
+}
+
+func (r *Resource153ToLegacyAdapter) Origin() string {
+	m := r.inner.GetMetadata()
+	if m == nil {
+		return ""
+	}
+	return m.Labels[OriginLabel]
+}
+
+func (r *Resource153ToLegacyAdapter) SetOrigin(string) {
+	panic("interface Resource153 does not implement SetOrigin")
+}
+
+func (r *Resource153ToLegacyAdapter) GetLabel(key string) (value string, ok bool) {
+	m := r.inner.GetMetadata()
+	if m == nil {
+		return "", false
+	}
+	value, ok = m.Labels[key]
+	return
+}
+
+func (r *Resource153ToLegacyAdapter) GetAllLabels() map[string]string {
+	m := r.inner.GetMetadata()
+	if m == nil {
+		return nil
+	}
+	return m.Labels
+}
+
+func (r *Resource153ToLegacyAdapter) GetStaticLabels() map[string]string {
+	return r.GetAllLabels()
+}
+
+func (r *Resource153ToLegacyAdapter) SetStaticLabels(map[string]string) {
+	panic("interface Resource153 does not implement SetStaticLabels")
+}
+
+func (r *Resource153ToLegacyAdapter) MatchSearch(searchValues []string) bool {
+	fieldVals := append(utils.MapToStrings(r.GetAllLabels()), r.GetName())
+	return MatchSearch(fieldVals, searchValues, nil)
+}
+
+func (r *Resource153ToLegacyAdapter) CloneResource() ResourceWithLabels {
+	if cloner, ok := r.inner.(interface{ CloneResource() Resource153 }); ok {
+		return &Resource153ToLegacyAdapter{inner: cloner.CloneResource().(Resource153)}
+	}
+	panic("interface Resource153 does not implement CloneResource for the wrapped type")
 }
