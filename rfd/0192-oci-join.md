@@ -106,8 +106,9 @@ When a node initiates the Oracle join method:
 via the Oracle instance metadata service.
 - With those credentials, the node will create a
 [signed HTTP request](https://docs.oracle.com/en-us/iaas/Content/API/Concepts/signingrequests.htm)
-to the Oracle Cloud API to fetch the compartment the instance is in, at
-`https://iaas.{region}.oraclecloud.com/{api version}/compartment/{compartment's OCID}`.
+to the Oracle Cloud API to
+[fetch the compartment the instance is in](https://docs.oracle.com/en-us/iaas/api/#/en/identity/20160918/Compartment/GetCompartment),
+at `https://iaas.{region}.oraclecloud.com/{api version}/compartment/{compartment's OCID}`.
 The instance's principal does not need any additional permissions to make this request.
 - The node will then make a `RegisterUsingToken` request to the auth server and
 sends the URL and headers of the signed request as parameters (the auth server
@@ -208,3 +209,26 @@ of agents with mixed versions is as follows:
 
 Add an entry to the test plan to verify that the Oracle join method works as
 described in the docs, just like the other join methods.
+
+## Appendix A: Sample JWT claims
+
+```json
+{
+  "sub": "ocid1.instance.oc1.phx.<random string>",
+  "opc-certtype": "instance",
+  "iss": "authService.oracle.com",
+  "fprint": "<fingerprint>",
+  "ptype": "instance",
+  "aud": "oci",
+  "opc-tag": "V3,ocid1.tenancy.oc1..<random string>,AAAAAQAAAAAAAACB,AAAAAQAAAAAAhy9d",
+  "ttype": "x509",
+  "opc-instance": "ocid1.instance.oc1.phx.<random string>",
+  "exp": 1732738022,
+  "opc-compartment": "ocid1.compartment.oc1..<random string>",
+  "iat": 1732736822,
+  "jti": "<jwt id>",
+  "tenant": "ocid1.tenancy.oc1..<random string>",
+  "jwk": "{\"kid\":\"<fingerprint>\",\"n\":\"0BOIi1uIrzoyQmNmfsew8aRv1DVNx979QqD6WoZ37QTDkFuNoGUPssk_mftatqQUGbkppKAtXutb9lXO1SsEnyOv2_tN1KxBhiahtMdRoha0wchla2GJQd7zxVxjSU70ousmuHfIAr29P6jdx3zQ15WYG-MMRcKfB8FtETzEcTBJH9ujjw00LkBmQ_CJsJIq2YFWjp4HW8DlX2YER_FYy7Apq98Rqno0Ze4lBBib-HeJP2x7q0mxJoHEJlsRBdMweMRKhsFL5oKJjWaul06TBp4wuEx7Czcr427d5RZJ-cSCYCDkf8bzMhZ4K5o2cpKV3gcqXEDuH81_B4odZ4-oLQ\",\"e\":\"AQAB\",\"kty\":\"RSA\",\"alg\":\"RS256\",\"use\":\"sig\"}",
+  "opc-tenant": "ocid1.tenancy.oc1..<random string>"
+}
+```
