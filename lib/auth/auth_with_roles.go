@@ -1848,7 +1848,7 @@ func (r resourceChecker) CanAccess(resource types.Resource) error {
 	case types.SAMLIdPServiceProvider:
 		return r.CheckAccess(rr, state)
 
-	case services.UnifiedResource153Adapter:
+	case *types.Resource153ToLegacyAdapter:
 		switch rr.Unwrap().(type) {
 		case services.IdentityCenterAccount:
 			return r.CheckAccess(rr, state)
