@@ -5856,6 +5856,7 @@ func TestUnifiedResources_IdentityCenter(t *testing.T) {
 		identity := TestUser(user.GetName())
 		clt, err := srv.NewClient(identity)
 		require.NoError(t, err)
+		defer clt.Close()
 
 		resp, err := clt.ListResources(ctx, proto.ListResourcesRequest{
 			ResourceType: types.KindIdentityCenterAccount,
@@ -5879,6 +5880,7 @@ func TestUnifiedResources_IdentityCenter(t *testing.T) {
 		identity := TestUser(user.GetName())
 		clt, err := srv.NewClient(identity)
 		require.NoError(t, err)
+		defer clt.Close()
 
 		_, err = clt.ListResources(ctx, proto.ListResourcesRequest{
 			ResourceType: types.KindIdentityCenterAccount,
