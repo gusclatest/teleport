@@ -20,6 +20,8 @@ package azure_sync
 
 import (
 	"context"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/storage/armstorage"
 	"sync"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
@@ -70,16 +72,31 @@ type VirtualMachinesClient interface {
 	ListVirtualMachines(ctx context.Context, resourceGroup string) ([]*armcompute.VirtualMachine, error)
 }
 
+type StorageAccountsClient interface {
+	ListStorageAccounts(ctx context.Context, resourceGroup string, opts *armstorage.AccountsClientListByResourceGroupOptions) ([]*armstorage.Account, error)
+}
+
+type ResourceGroupsClient interface {
+	ListResourceGroups(ctx context.Context, opts *armresources.ResourceGroupsClientListOptions) ([]*armresources.ResourceGroup, error)
+}
+
+type BlobContainersClient interface {
+	ListBlobContainers(ctx context.Context, resourceGroupName string, accountName string, opts *armstorage.BlobContainersClientListOptions) ([]*armstorage.ListContainerItem, error)
+}
+
 type Fetcher struct {
 	Config
 	lastError               error
 	lastDiscoveredResources uint64
 	lastResult              *Resources
 
-	graphClient      *GraphClient
-	vmClient         VirtualMachinesClient
-	roleDefClient    RoleDefinitionsClient
-	roleAssignClient RoleAssignmentsClient
+	graphClient           *GraphClient
+	vmClient              VirtualMachinesClient
+	roleDefClient         RoleDefinitionsClient
+	roleAssignClient      RoleAssignmentsClient
+	storageAccountsClient StorageAccountsClient
+	resourceGroupsClient  ResourceGroupsClient
+	blobContainersClient  BlobContainersClient
 }
 
 func NewFetcher(cfg Config, ctx context.Context) (*Fetcher, error) {
@@ -102,14 +119,29 @@ func NewFetcher(cfg Config, ctx context.Context) (*Fetcher, error) {
 	if err != nil {
 		return nil, trace.Wrap(err)
 	}
+	storageAccountsClient, err := azure.NewStorageAccountsClient(cfg.SubscriptionID, cred, nil)
+	if err != nil {
+		return nil, trace.Wrap(err)
+	}
+	resourceGroupsClient, err := azure.NewResourceGroupsClient(cfg.SubscriptionID, cred, nil)
+	if err != nil {
+		return nil, trace.Wrap(err)
+	}
+	blobContainersClient, err := azure.NewBlobContainersClient(cfg.SubscriptionID, cred, nil)
+	if err != nil {
+		return nil, trace.Wrap(err)
+	}
 
 	// Create and return the fetcher
 	return &Fetcher{
-		Config:           cfg,
-		lastResult:       &Resources{},
-		vmClient:         vmClient,
-		roleDefClient:    roleDefClient,
-		roleAssignClient: roleAssignClient,
+		Config:                cfg,
+		lastResult:            &Resources{},
+		vmClient:              vmClient,
+		roleDefClient:         roleDefClient,
+		roleAssignClient:      roleAssignClient,
+		storageAccountsClient: storageAccountsClient,
+		resourceGroupsClient:  resourceGroupsClient,
+		blobContainersClient:  blobContainersClient,
 	}, nil
 }
 

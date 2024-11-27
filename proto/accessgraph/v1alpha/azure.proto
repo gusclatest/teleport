@@ -94,3 +94,24 @@ message AzureRBACPermission {
   repeated string data_actions = 3;
   repeated string not_data_actions = 4;
 }
+
+// AzureDatabase defines the various kinds of Azure relational databases in Azure
+message AzureDatabase {
+  string id = 1;
+  string subscription_id = 2;
+  google.protobuf.Timestamp last_sync_time = 3;
+  string name = 4;
+  string resource_group = 5;
+  map<string, string> tags = 6;
+  string database_type = 7;
+}
+
+// AzureBlobContainer defines the blob storage containers in Azure
+message AzureBlobContainer {
+  string id = 1;
+  string subscription_id = 2;
+  google.protobuf.Timestamp last_sync_time = 3;
+  string name = 4;
+  string resource_group_name = 5;
+  string account_name = 6;
+}
