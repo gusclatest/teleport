@@ -32,8 +32,8 @@ following order:
    connections from clients should reload their identity and start serving
    certificates issed by the new CA, but still accept certificates issued by the
    original CA.
-   When rotating the [`host` CA], this automatically applies for teleport
-   cluster components (Agents, Auth Service, and Proxy Service instances).
+   When rotating the [`host` CA], this automatically applies for Teleport
+   cluster components (Agents, Auth Service and Proxy Service instances).
 1. `standby`: No rotation in progress. All operations have completed.
 
 Before the final `standby` phase, you can also put the rotation in the
@@ -125,12 +125,9 @@ Service instances have completed the transition to target phase before
 proceeding to the next phase. We will explain the phases in [Step
 2](#step-24-start-a-manual-rotation).
 
-<Admonition type="note">
 Any OpenSSH hosts must be issued new host certificates during the
 `update_servers` phase of the `host` CA rotation.
-</Admonition>
 
-<Admonition type="note">
 If you are joining Teleport processes to a cluster via the Teleport Auth
 Service, each Teleport process needs a CA pin to trust the Auth Service.
 Teleport Agents connecting to a Proxy Service address never need a CA pin, but
@@ -138,7 +135,6 @@ new Proxy Services should always use a CA pin when joining the cluster.
 During the CA rotation, `tctl status` will report that there are 2 CA pins.
 The CA pin configuration can accept a list including both pins.
 After the rotation is complete, only the new CA pin will be reported.
-</Admonition>
 
 ### `user`
 
@@ -174,11 +170,17 @@ Teleport Database Service to trust the CA.
 
 #### Rotating the database CAs
 
-<Admonition type="note">
 These steps provide instructions to rotate both the `db` and `db_client` CAs
 together, but it is also possible to rotate just one or the other and follow the
 same steps.
-</Admonition>
+
+Start by rotating both the `db` and `db_client` CAs to the `init` phase.
+During the `init` phase, `tctl auth sign` will issue database server
+certificates signed by the new `db` CA keys, and will output a CAs file
+including both the old and new `db_client` CA certificates.
+To avoid losing access to your self-hosted databases at any point, you should
+reconfigure your databases during the `init` phase with new certificates and
+trusted CAs.
 
 <Admonition type="note">
 `tctl auth sign --format db` is an exception to the usual behavior of the `init`
@@ -190,14 +192,6 @@ a CA rotation: first during the `init` phase to get a certificate signed by the
 new `db` CA and start trusting the new `db_client` CA, and second during the
 `standby` phase to stop trusting the old `db_client` CA.
 </Admonition>
-
-Start by rotating both the `db` and `db_client` CAs to the `init` phase.
-During the `init` phase, `tctl auth sign` will issue database server
-certificates signed by the new `db` CA keys, and will output a CAs file
-including both the old and new `db_client` CA certificates.
-To avoid losing access to your self-hosted databases at any point, you should
-reconfigure your databases during the `init` phase with new certificates and
-trusted CAs.
 
 Consult the appropriate
 [documentation](../../../enroll-resources/database-access/database-access.mdx)
@@ -405,7 +399,7 @@ trust certificates signed by the original CA.
 ### `update_servers`
 
 Initiate the `update_servers` phase. In this phase, Teleport cluster components
-(Agents, Auth Service, and Proxy Service instances) reload and start serving TLS
+(Agents, Auth Service and Proxy Service instances) reload and start serving TLS
 and SSH certificates signed by the new certificate authority, but still accept
 certificates issued by the original certificate authority. This phase only
 affects the `host` CA.
