@@ -141,6 +141,7 @@ type testPack struct {
 	autoUpdateService       services.AutoUpdateService
 	provisioningStates      services.ProvisioningStates
 	identityCenter          services.IdentityCenter
+	gitServers              services.GitServers
 }
 
 // testFuncs are functions to support testing an object in a cache.
@@ -402,6 +403,11 @@ func newPackWithoutCache(dir string, opts ...packOption) (*testPack, error) {
 		return nil, trace.Wrap(err)
 	}
 
+	p.gitServers, err = local.NewGitServerService(p.backend)
+	if err != nil {
+		return nil, trace.Wrap(err)
+	}
+
 	return p, nil
 }
 
@@ -455,6 +461,7 @@ func newPack(dir string, setupConfig func(c Config) Config, opts ...packOption) 
 		AutoUpdateService:       p.autoUpdateService,
 		ProvisioningStates:      p.provisioningStates,
 		IdentityCenter:          p.identityCenter,
+		GitServers:              p.gitServers,
 		MaxRetryPeriod:          200 * time.Millisecond,
 		EventsC:                 p.eventsC,
 	}))
