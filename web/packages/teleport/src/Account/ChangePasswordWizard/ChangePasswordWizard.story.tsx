@@ -23,13 +23,9 @@ import Dialog from 'design/Dialog';
 import { createTeleportContext } from 'teleport/mocks/contexts';
 import { ContextProvider } from 'teleport';
 
-import { MfaDevice } from 'teleport/services/mfa';
+import { getMfaRegisterOptions, MfaDevice } from 'teleport/services/mfa';
 
-import {
-  ChangePasswordStep,
-  ReauthenticateStep,
-  createReauthOptions,
-} from './ChangePasswordWizard';
+import { ChangePasswordStep, ReauthenticateStep } from './ChangePasswordWizard';
 
 export default {
   title: 'teleport/Account/Manage Devices/Change Password Wizard',
@@ -96,8 +92,6 @@ const devices: MfaDevice[] = [
   },
 ];
 
-const defaultReauthOptions = createReauthOptions('optional', true, devices);
-
 const stepProps = {
   // StepComponentProps
   next() {},
@@ -108,8 +102,8 @@ const stepProps = {
   refCallback: () => {},
 
   // Other props
-  reauthOptions: defaultReauthOptions,
-  reauthMethod: defaultReauthOptions[0].value,
+  reauthOptions: getMfaRegisterOptions('on'),
+  reauthMethod: 'webauthn',
   credential: { id: '', type: '' },
   onReauthMethodChange() {},
   onAuthenticated() {},

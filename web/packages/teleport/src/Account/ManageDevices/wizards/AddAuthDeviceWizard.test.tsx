@@ -121,7 +121,7 @@ describe('flow without reauthentication', () => {
     render(<TestWizard usage="mfa" privilegeToken="privilege-token" />);
 
     const createStep = within(screen.getByTestId('create-step'));
-    await user.click(createStep.getByLabelText('Hardware Device'));
+    await user.click(createStep.getByLabelText('Security Key'));
     await user.click(
       createStep.getByRole('button', { name: 'Create an MFA method' })
     );

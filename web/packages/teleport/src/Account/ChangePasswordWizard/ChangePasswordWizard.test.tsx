@@ -26,10 +26,7 @@ import auth, { MfaChallengeScope } from 'teleport/services/auth/auth';
 
 import { MfaChallengeResponse } from 'teleport/services/mfa';
 
-import {
-  ChangePasswordWizardProps,
-  createReauthOptions,
-} from './ChangePasswordWizard';
+import { ChangePasswordWizardProps } from './ChangePasswordWizard';
 
 import { ChangePasswordWizard } from '.';
 

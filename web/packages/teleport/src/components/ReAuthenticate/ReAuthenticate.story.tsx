@@ -44,5 +44,6 @@ const props: Props = {
   getMfaChallenge: () => null,
   getMfaChallengeOptions: async () => getMfaRegisterOptions('on'),
   submitWithMfa: (mfaType?: DeviceType, totp_code?: string) => null,
+  submitWithPasswordless: () => null,
   onClose: () => null,
 };
