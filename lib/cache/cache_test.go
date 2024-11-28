@@ -876,6 +876,7 @@ func TestCompletenessInit(t *testing.T) {
 			MaxRetryPeriod:          200 * time.Millisecond,
 			IdentityCenter:          p.identityCenter,
 			EventsC:                 p.eventsC,
+			GitServers:              p.gitServers,
 		}))
 		require.NoError(t, err)
 
@@ -960,6 +961,7 @@ func TestCompletenessReset(t *testing.T) {
 		IdentityCenter:          p.identityCenter,
 		MaxRetryPeriod:          200 * time.Millisecond,
 		EventsC:                 p.eventsC,
+		GitServers:              p.gitServers,
 	}))
 	require.NoError(t, err)
 
@@ -1171,6 +1173,7 @@ func TestListResources_NodesTTLVariant(t *testing.T) {
 		MaxRetryPeriod:          200 * time.Millisecond,
 		EventsC:                 p.eventsC,
 		neverOK:                 true, // ensure reads are never healthy
+		GitServers:              p.gitServers,
 	}))
 	require.NoError(t, err)
 
@@ -1265,6 +1268,7 @@ func initStrategy(t *testing.T) {
 		IdentityCenter:          p.identityCenter,
 		MaxRetryPeriod:          200 * time.Millisecond,
 		EventsC:                 p.eventsC,
+		GitServers:              p.gitServers,
 	}))
 	require.NoError(t, err)
 
@@ -3528,6 +3532,7 @@ func TestCacheWatchKindExistsInEvents(t *testing.T) {
 		types.KindIdentityCenterAccount:             types.Resource153ToLegacy(newIdentityCenterAccount("some_account")),
 		types.KindIdentityCenterAccountAssignment:   types.Resource153ToLegacy(newIdentityCenterAccountAssignment("some_account_assignment")),
 		types.KindIdentityCenterPrincipalAssignment: types.Resource153ToLegacy(newIdentityCenterPrincipalAssignment("some_principal_assignment")),
+		types.KindGitServer:                         &types.ServerV2{},
 	}
 
 	for name, cfg := range cases {

@@ -15,6 +15,7 @@ package gitserver
 
 import (
 	"context"
+
 	"github.com/gravitational/trace"
 
 	gitserverv1 "github.com/gravitational/teleport/api/gen/proto/go/teleport/gitserver/v1"
