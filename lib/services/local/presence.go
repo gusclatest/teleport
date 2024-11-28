@@ -344,10 +344,10 @@ func (s *PresenceService) UpsertNode(ctx context.Context, server types.Server) (
 	if server.GetNamespace() == "" {
 		server.SetNamespace(apidefaults.Namespace)
 	}
-
-	if n := server.GetNamespace(); n != apidefaults.Namespace {
-		return nil, trace.BadParameter("cannot place node in namespace %q, custom namespaces are deprecated", n)
+	if err := validateNamespaceDefault(server.GetNamespace()); err != nil {
+		return nil, trace.Wrap(err)
 	}
+
 	rev := server.GetRevision()
 	value, err := services.MarshalServer(server)
 	if err != nil {
@@ -376,10 +376,10 @@ func (s *PresenceService) UpdateNode(ctx context.Context, server types.Server) (
 	if server.GetNamespace() == "" {
 		server.SetNamespace(apidefaults.Namespace)
 	}
-
-	if n := server.GetNamespace(); n != apidefaults.Namespace {
-		return nil, trace.BadParameter("cannot place node in namespace %q, custom namespaces are deprecated", n)
+	if err := validateNamespaceDefault(server.GetNamespace()); err != nil {
+		return nil, trace.Wrap(err)
 	}
+
 	rev := server.GetRevision()
 	value, err := services.MarshalServer(server)
 	if err != nil {
@@ -1002,6 +1002,10 @@ func (s *PresenceService) UpsertDatabaseServer(ctx context.Context, server types
 	if err := services.CheckAndSetDefaults(server); err != nil {
 		return nil, trace.Wrap(err)
 	}
+	if err := validateNamespaceDefault(server.GetNamespace()); err != nil {
+		return nil, trace.Wrap(err)
+	}
+
 	rev := server.GetRevision()
 	value, err := services.MarshalDatabaseServer(server)
 	if err != nil {
@@ -1095,6 +1099,10 @@ func (s *PresenceService) UpsertApplicationServer(ctx context.Context, server ty
 	if err := services.CheckAndSetDefaults(server); err != nil {
 		return nil, trace.Wrap(err)
 	}
+	if err := validateNamespaceDefault(server.GetNamespace()); err != nil {
+		return nil, trace.Wrap(err)
+	}
+
 	rev := server.GetRevision()
 	value, err := services.MarshalAppServer(server)
 	if err != nil {
@@ -1675,6 +1683,13 @@ func FakePaginate(resources []types.ResourceWithLabels, req FakePaginateParams) 
 		NextKey:    nextKey,
 		TotalCount: totalCount,
 	}, nil
+}
+
+func validateNamespaceDefault(ns string) error {
+	if ns == apidefaults.Namespace {
+		return nil
+	}
+	return trace.BadParameter("namespace %q invalid, custom namespaces are deprecated", ns)
 }
 
 // backendItemToDatabaseServer unmarshals `backend.Item` into a
