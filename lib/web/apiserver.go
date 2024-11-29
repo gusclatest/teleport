@@ -2944,6 +2944,7 @@ func makeUnifiedResourceRequest(r *http.Request) (*proto.ListUnifiedResourcesReq
 			types.KindWindowsDesktop,
 			types.KindKubernetesCluster,
 			types.KindSAMLIdPServiceProvider,
+			types.KindGitServer,
 		}
 	}
 
@@ -3073,11 +3074,14 @@ func (h *Handler) clusterUnifiedResourcesGet(w http.ResponseWriter, request *htt
 	for _, enriched := range page {
 		switch r := enriched.ResourceWithLabels.(type) {
 		case types.Server:
-			logins, err := calculateSSHLogins(identity, enriched.Logins)
-			if err != nil {
-				return nil, trace.Wrap(err)
+			var logins []string
+			switch enriched.GetKind() {
+			case types.KindNode:
+				logins, err = calculateSSHLogins(identity, enriched.Logins)
+				if err != nil {
+					return nil, trace.Wrap(err)
+				}
 			}
-
 			unifiedResources = append(unifiedResources, ui.MakeServer(site.GetName(), r, logins, enriched.RequiresRequest))
 		case types.DatabaseServer:
 			if !hasFetchedDBUsersAndNames {
