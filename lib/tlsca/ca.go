@@ -45,6 +45,7 @@ import (
 	"github.com/gravitational/teleport/api/types/wrappers"
 	"github.com/gravitational/teleport/api/utils"
 	"github.com/gravitational/teleport/api/utils/keys"
+	"github.com/gravitational/teleport/lib/auth/machineid/workloadidv1ff"
 )
 
 var log = logrus.WithFields(logrus.Fields{
@@ -883,17 +884,22 @@ func (id *Identity) Subject() (pkix.Name, error) {
 		)
 	}
 
-	if id.JoinAttributes != nil {
-		encoded, err := protojson.Marshal(id.JoinAttributes)
-		if err != nil {
-			return pkix.Name{}, trace.Wrap(err, "encoding join attributes as protojson")
+	// NOTE(noah): Encoding of join attributes is feature flagged to allow us
+	// to determine if there is an meaningful impact on overall cert size or
+	// subject size.
+	if workloadidv1ff.ShouldEncodeJoinAttributes() {
+		if id.JoinAttributes != nil {
+			encoded, err := protojson.Marshal(id.JoinAttributes)
+			if err != nil {
+				return pkix.Name{}, trace.Wrap(err, "encoding join attributes as protojson")
+			}
+			subject.ExtraNames = append(subject.ExtraNames,
+				pkix.AttributeTypeAndValue{
+					Type:  JoinAttributesASN1ExtensionOID,
+					Value: string(encoded),
+				},
+			)
 		}
-		subject.ExtraNames = append(subject.ExtraNames,
-			pkix.AttributeTypeAndValue{
-				Type:  JoinAttributesASN1ExtensionOID,
-				Value: string(encoded),
-			},
-		)
 	}
 
 	// Device extensions.
