@@ -31,6 +31,7 @@ message JoinAttrs {
   JoinAttrsAWSIAM iam = 4;
   // Attributes that are specific to the TPM (`tpm`) join method.
   JoinAttrsTPM tpm = 5;
+  JoinAttrsAzure azure = 6;
 }
 
 // The collection of attributes that result from the join process but are not
@@ -154,4 +155,12 @@ message JoinAttrsTPM {
   // Whether or not the EK certificate was verified against a certificate
   // authority.
   bool ek_cert_verified = 3;
+}
+
+// Attributes that are specific to the Azure (`azure`) join method.
+message JoinAttrsAzure {
+  // The subscription ID of the Azure account that the joining entity is a part of.
+  string subscription = 1;
+  // The resource group of the Azure account that the joining entity is a part of.
+  string resource_group = 2;
 }

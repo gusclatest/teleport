@@ -453,7 +453,7 @@ func (a *Server) generateCerts(
 	ctx context.Context,
 	provisionToken types.ProvisionToken,
 	req *types.RegisterUsingTokenRequest,
-	untypedAttrs any,
+	rawJoinAttrs any,
 ) (*proto.Certs, error) {
 	if req.Expires != nil {
 		return nil, trace.BadParameter("'expires' cannot be set on join for non-bot certificates")
@@ -513,7 +513,7 @@ func (a *Server) generateCerts(
 			RemoteAddr: req.RemoteAddr,
 		},
 	}
-	joinEvent.Attributes, err = rawJoinAttrsToStruct(untypedAttrs)
+	joinEvent.Attributes, err = rawJoinAttrsToStruct(rawJoinAttrs)
 	if err != nil {
 		log.WithError(err).Warn("Unable to encode join attributes for audit event.")
 	}
