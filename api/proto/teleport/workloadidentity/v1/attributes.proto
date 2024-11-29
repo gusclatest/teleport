@@ -88,18 +88,16 @@ message JoinAttrsGitLab {
   // If there is no configured environment, this field is false.
   bool environment_protected = 12;
   // The ID of the runner that this pipeline is running on.
-  uint32 runner_id = 13;
+  int64 runner_id = 13;
   // The type of runner that is processing the pipeline.
   // Either `gitlab-hosted` or `self-hosted`.
   string runner_environment = 14;
   // The SHA of the commit that triggered the pipeline run.
   string sha = 15;
-  // The CI config ref URI.
+  // The ref URI of the CI config configuring the pipeline.
   string ci_config_ref_uri = 16;
-  // The CI config ref.
-  string ci_config_ref = 17;
-  // The JTI of the GitLab JWT that was used to join.
-  string jti = 18;
+  // The Git SHA of the CI config ref configuring the pipeline.
+  string ci_config_sha = 17;
 }
 
 // Attributes that are specific to the GitHub (`github`) join method.
