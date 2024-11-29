@@ -207,14 +207,12 @@ func (a *Server) handleJoinFailure(
 // will be checked.
 func (a *Server) RegisterUsingToken(ctx context.Context, req *types.RegisterUsingTokenRequest) (certs *proto.Certs, err error) {
 	attrs := &workloadidentityv1pb.JoinAttrs{}
-	// rawJoinAttrs typically holds the raw metadata sourced from a join.
-	// E.g the claims from a JWT token. This is used for auditing purposes.
-	var rawJoinAttrs any
+	var rawClaims any
 	var provisionToken types.ProvisionToken
 	defer func() {
 		// Emit a log message and audit event on join failure.
 		if err != nil {
-			a.handleJoinFailure(err, provisionToken, rawJoinAttrs, req)
+			a.handleJoinFailure(err, provisionToken, rawClaims, req)
 		}
 	}()
 
@@ -236,7 +234,7 @@ func (a *Server) RegisterUsingToken(ctx context.Context, req *types.RegisterUsin
 	case types.JoinMethodGitHub:
 		claims, err := a.checkGitHubJoinRequest(ctx, req)
 		if claims != nil {
-			rawJoinAttrs = claims
+			rawClaims = claims
 			attrs.Github = claims.JoinAttrs()
 		}
 		if err != nil {
@@ -245,7 +243,7 @@ func (a *Server) RegisterUsingToken(ctx context.Context, req *types.RegisterUsin
 	case types.JoinMethodGitLab:
 		claims, err := a.checkGitLabJoinRequest(ctx, req)
 		if claims != nil {
-			rawJoinAttrs = claims
+			rawClaims = claims
 			attrs.Gitlab = claims.JoinAttrs()
 		}
 		if err != nil {
@@ -254,7 +252,7 @@ func (a *Server) RegisterUsingToken(ctx context.Context, req *types.RegisterUsin
 	case types.JoinMethodCircleCI:
 		claims, err := a.checkCircleCIJoinRequest(ctx, req)
 		if claims != nil {
-			rawJoinAttrs = claims
+			rawClaims = claims
 			attrs.Circleci = claims.JoinAttrs()
 		}
 		if err != nil {
@@ -263,7 +261,7 @@ func (a *Server) RegisterUsingToken(ctx context.Context, req *types.RegisterUsin
 	case types.JoinMethodKubernetes:
 		claims, err := a.checkKubernetesJoinRequest(ctx, req)
 		if claims != nil {
-			rawJoinAttrs = claims
+			rawClaims = claims
 		}
 		if err != nil {
 			return nil, trace.Wrap(err)
@@ -271,7 +269,7 @@ func (a *Server) RegisterUsingToken(ctx context.Context, req *types.RegisterUsin
 	case types.JoinMethodGCP:
 		claims, err := a.checkGCPJoinRequest(ctx, req)
 		if claims != nil {
-			rawJoinAttrs = claims
+			rawClaims = claims
 		}
 		if err != nil {
 			return nil, trace.Wrap(err)
@@ -279,7 +277,8 @@ func (a *Server) RegisterUsingToken(ctx context.Context, req *types.RegisterUsin
 	case types.JoinMethodSpacelift:
 		claims, err := a.checkSpaceliftJoinRequest(ctx, req)
 		if claims != nil {
-			rawJoinAttrs = claims
+			rawClaims = claims
+			attrs.Spacelift = claims.JoinAttrs()
 		}
 		if err != nil {
 			return nil, trace.Wrap(err)
@@ -287,7 +286,8 @@ func (a *Server) RegisterUsingToken(ctx context.Context, req *types.RegisterUsin
 	case types.JoinMethodTerraformCloud:
 		claims, err := a.checkTerraformCloudJoinRequest(ctx, req)
 		if claims != nil {
-			rawJoinAttrs = claims
+			rawClaims = claims
+			attrs.TerraformCloud = claims.JoinAttrs()
 		}
 		if err != nil {
 			return nil, trace.Wrap(err)
@@ -295,7 +295,7 @@ func (a *Server) RegisterUsingToken(ctx context.Context, req *types.RegisterUsin
 	case types.JoinMethodBitbucket:
 		claims, err := a.checkBitbucketJoinRequest(ctx, req)
 		if claims != nil {
-			rawJoinAttrs = claims
+			rawClaims = claims
 			attrs.Bitbucket = claims.JoinAttrs()
 		}
 		if err != nil {
@@ -323,12 +323,12 @@ func (a *Server) RegisterUsingToken(ctx context.Context, req *types.RegisterUsin
 			ctx,
 			provisionToken,
 			req,
-			rawJoinAttrs,
+			rawClaims,
 			attrs,
 		)
 		return certs, trace.Wrap(err)
 	}
-	certs, err = a.generateCerts(ctx, provisionToken, req, rawJoinAttrs)
+	certs, err = a.generateCerts(ctx, provisionToken, req, rawClaims)
 	return certs, trace.Wrap(err)
 }
 
