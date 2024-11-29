@@ -41,6 +41,10 @@ message JoinAttrs {
   JoinAttrsTerraformCloud terraform_cloud = 9;
   // Attributes that are specific to the Spacelift (`spacelift`) join method.
   JoinAttrsSpacelift spacelift = 10;
+  // Attributes that are specific to the GCP (`gcp`) join method.
+  JoinAttrsGCP gcp = 11;
+  // Attributes that are specific to the Kubernetes (`kubernetes`) join method.
+  JoinAttrsKubernetes kubernetes = 12;
 }
 
 // The collection of attributes that result from the join process but are not
@@ -175,6 +179,8 @@ message JoinAttrsAzure {
 }
 
 // Attributes that are specific to the CircleCI (`circleci`) join method.
+// These are mapped from the claims of the JWT issued by CircleCI to runs,
+// which is documented at: https://circleci.com/docs/openid-connect-tokens/
 message JoinAttrsCircleCI {
   // The `sub` claim of the CircleCI JWT that was used to join.
   // For example: `org/ORGANIZATION_ID/project/PROJECT_ID/user/USER_ID`
@@ -186,6 +192,8 @@ message JoinAttrsCircleCI {
 }
 
 // Attributes that are specific to the Bitbucket (`bitbucket`) join method.
+// These are mapped from the claims of the JWT issued by BitBucket to runs,
+// which is documented at: https://support.atlassian.com/bitbucket-cloud/docs/integrate-pipelines-with-resource-servers-using-oidc/
 message JoinAttrsBitbucket {
   // The `sub` claim of the Bitbucket JWT that was used to join.
   string sub = 1;
@@ -243,4 +251,62 @@ message JoinAttrsSpacelift {
   string run_id = 6;
   // The configured scope of the token, either `read` or `write`.
   string scope = 7;
+}
+
+// Attributes specific to the GCP join method when the joining entity is on a
+// GCE instance.
+message JoinAttrsGCPGCE {
+  // The name of the GCE instance that the joining entity is running on.
+  string name = 1;
+  // The zone of the GCE instance that the joining entity is running on.
+  string zone = 2;
+  // The ID of the GCE instance that the joining entity is running on.
+  string id = 3;
+  // The project ID of the GCP project that the instance is running within.
+  string project = 4;
+}
+
+// Attributes that are specific to the GCP (`gcp`) join method.
+// These are mapped from the claims of the JWT instance identity token, which
+// is documented at: https://cloud.google.com/compute/docs/instances/verifying-instance-identity#payload
+message JoinAttrsGCP {
+  // The service account email of the service account that the instance is running as.
+  string service_account = 1;
+  // Attributes specific to the GCP join method when the joining entity is on a
+  // GCE instance. This may not be present if the joining entity is not on
+  // GCE.
+  JoinAttrsGCPGCE gce = 2;
+}
+
+// Attributes that are specific to the Kubernetes (`kubernetes`) join method
+// when a pod-bound service account token is used.
+message JoinAttrsKubernetesPod {
+  // The name of the service account that the joining entity is running as.
+  string name = 1;
+}
+
+// Attributes that are specific to the Kubernetes (`kubernetes`) join method
+// when a service account token is used.
+message JoinAttrsKubernetesServiceAccount {
+  // The name of the service account that the joining entity is running as.
+  string name = 1;
+  // The namespace of the service account that the joining entity is running as.
+  string namespace = 2;
+}
+
+// Attributes that are specific to the Kubernetes (`kubernetes`) join method.
+message JoinAttrsKubernetes {
+  // The fully qualified identifier of the entity based on the Kubernetes
+  // token. For a service account, this takes the form of
+  // `system:serviceaccount:<namespace>:<service-account-name>`.
+  string subject = 1;
+  // Attributes specific to the Kubernetes join method when the joining entity
+  // is a service account token. This will only be present if the joining entity
+  // is a service account (as opposed to a human user or similar).
+  JoinAttrsKubernetesServiceAccount service_account = 2;
+  // Attributes specific to the Kubernetes join method when the joining entity
+  // is a pod-bound service account token. This will only be present if the
+  // joining entity is a service account, and, the token has been bound to a
+  // pod.
+  JoinAttrsKubernetesPod pod = 3;
 }

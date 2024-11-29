@@ -262,6 +262,7 @@ func (a *Server) RegisterUsingToken(ctx context.Context, req *types.RegisterUsin
 		claims, err := a.checkKubernetesJoinRequest(ctx, req)
 		if claims != nil {
 			rawClaims = claims
+			attrs.Kubernetes = claims.JoinAttrs()
 		}
 		if err != nil {
 			return nil, trace.Wrap(err)
@@ -270,6 +271,7 @@ func (a *Server) RegisterUsingToken(ctx context.Context, req *types.RegisterUsin
 		claims, err := a.checkGCPJoinRequest(ctx, req)
 		if claims != nil {
 			rawClaims = claims
+			attrs.Gcp = claims.JoinAttrs()
 		}
 		if err != nil {
 			return nil, trace.Wrap(err)
@@ -336,7 +338,7 @@ func (a *Server) generateCertsBot(
 	ctx context.Context,
 	provisionToken types.ProvisionToken,
 	req *types.RegisterUsingTokenRequest,
-	rawJoinAttrs any,
+	rawJoinClaims any,
 	attrs *workloadidentityv1pb.JoinAttrs,
 ) (*proto.Certs, error) {
 	// bots use this endpoint but get a user cert
@@ -386,7 +388,7 @@ func (a *Server) generateCertsBot(
 		},
 	}
 	var err error
-	joinEvent.Attributes, err = rawJoinAttrsToStruct(rawJoinAttrs)
+	joinEvent.Attributes, err = rawJoinAttrsToStruct(rawJoinClaims)
 	if err != nil {
 		log.WithError(err).Warn("Unable to encode join attributes for audit event.")
 	}
@@ -455,7 +457,7 @@ func (a *Server) generateCerts(
 	ctx context.Context,
 	provisionToken types.ProvisionToken,
 	req *types.RegisterUsingTokenRequest,
-	rawJoinAttrs any,
+	rawJoinClaims any,
 ) (*proto.Certs, error) {
 	if req.Expires != nil {
 		return nil, trace.BadParameter("'expires' cannot be set on join for non-bot certificates")
@@ -515,7 +517,7 @@ func (a *Server) generateCerts(
 			RemoteAddr: req.RemoteAddr,
 		},
 	}
-	joinEvent.Attributes, err = rawJoinAttrsToStruct(rawJoinAttrs)
+	joinEvent.Attributes, err = rawJoinAttrsToStruct(rawJoinClaims)
 	if err != nil {
 		log.WithError(err).Warn("Unable to encode join attributes for audit event.")
 	}
