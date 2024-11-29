@@ -313,7 +313,7 @@ func (a *Server) updateBotInstance(
 	if templateAuthRecord != nil {
 		authRecord.JoinToken = templateAuthRecord.JoinToken
 		authRecord.JoinMethod = templateAuthRecord.JoinMethod
-		authRecord.Metadata = templateAuthRecord.Metadata
+		authRecord.JoinAttrs = templateAuthRecord.JoinAttrs
 	}
 
 	// An empty bot instance most likely means a bot is rejoining after an
