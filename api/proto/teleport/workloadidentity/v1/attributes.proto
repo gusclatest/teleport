@@ -37,6 +37,10 @@ message JoinAttrs {
   JoinAttrsCircleCI circleci = 7;
   // Attributes that are specific to the Bitbucket (`bitbucket`) join method.
   JoinAttrsBitbucket bitbucket = 8;
+  // Attributes that are specific to the Terraform Cloud (`terraform_cloud`) join method.
+  JoinAttrsTerraformCloud terraform_cloud = 9;
+  // Attributes that are specific to the Spacelift (`spacelift`) join method.
+  JoinAttrsSpacelift spacelift = 10;
 }
 
 // The collection of attributes that result from the join process but are not
@@ -197,4 +201,46 @@ message JoinAttrsBitbucket {
   string deployment_environment_uuid = 6;
   // The name of the branch the pipeline is running against.
   string branch_name = 7;
+}
+
+// Attributes that are specific to the Terraform Cloud (`terraform_cloud`) join method.
+// These are mapped from the claims of the JWT issued by Terraform Cloud to runs,
+// which is documented at: https://developer.hashicorp.com/terraform/enterprise/workspaces/dynamic-provider-credentials/workload-identity-tokens
+message JoinAttrsTerraformCloud {
+  // The `sub` claim of the Terraform Cloud JWT that was used to join.
+  string sub = 1;
+  // The name of the organization the project and workspace belong to.
+  string organization_name = 2;
+  // The name of the project the workspace belongs to.
+  string project_name = 3;
+  // The name of the workspace that the plan/apply is running within.
+  string workspace_name = 4;
+  // The fully qualified workspace path, including the organization and project
+  // name.
+  // For example: `organization:<name>:project:<name>:workspace:<name>`
+  string full_workspace = 5;
+  // The ID of the run that is being executed.
+  string run_id = 6;
+  // The phase of the run that is being executed, either `plan` or `apply`.
+  string run_phase = 7;
+}
+
+// Attributes that are specific to the Spacelift (`spacelift`) join method.
+// These are mapped from the claims of the JWT issued by Spacelift to runs,
+// which is documented at: https://docs.spacelift.io/integrations/cloud-providers/oidc/#standard-claims
+message JoinAttrsSpacelift {
+  // The `sub` claim of the Spacelift JWT that was used to join.
+  string sub = 1;
+  // The ID of the space in which the run is executing.
+  string space_id = 2;
+  // The type of the caller that owns the run, either `stack` or `module`.
+  string caller_type = 3;
+  // The ID of the caller that generated the run.
+  string caller_id = 4;
+  // The type of the run, either `PROPOSED`, `TRACKED`, `TASK`, `TESTING` or `DESTROY`.
+  string run_type = 5;
+  // The ID of the run.
+  string run_id = 6;
+  // The configured scope of the token, either `read` or `write`.
+  string scope = 7;
 }
