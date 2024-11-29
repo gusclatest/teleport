@@ -255,6 +255,7 @@ func (a *Server) RegisterUsingToken(ctx context.Context, req *types.RegisterUsin
 		claims, err := a.checkCircleCIJoinRequest(ctx, req)
 		if claims != nil {
 			rawJoinAttrs = claims
+			attrs.Circleci = claims.JoinAttrs()
 		}
 		if err != nil {
 			return nil, trace.Wrap(err)
@@ -295,6 +296,7 @@ func (a *Server) RegisterUsingToken(ctx context.Context, req *types.RegisterUsin
 		claims, err := a.checkBitbucketJoinRequest(ctx, req)
 		if claims != nil {
 			rawJoinAttrs = claims
+			attrs.Bitbucket = claims.JoinAttrs()
 		}
 		if err != nil {
 			return nil, trace.Wrap(err)

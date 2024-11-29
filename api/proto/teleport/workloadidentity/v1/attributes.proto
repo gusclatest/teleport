@@ -31,7 +31,12 @@ message JoinAttrs {
   JoinAttrsAWSIAM iam = 4;
   // Attributes that are specific to the TPM (`tpm`) join method.
   JoinAttrsTPM tpm = 5;
+  // Attributes that are specific to the Azure (`azure`) join method.
   JoinAttrsAzure azure = 6;
+  // Attributes that are specific to the CircleCI (`circleci`) join method.
+  JoinAttrsCircleCI circleci = 7;
+  // Attributes that are specific to the Bitbucket (`bitbucket`) join method.
+  JoinAttrsBitbucket bitbucket = 8;
 }
 
 // The collection of attributes that result from the join process but are not
@@ -163,4 +168,33 @@ message JoinAttrsAzure {
   string subscription = 1;
   // The resource group of the Azure account that the joining entity is a part of.
   string resource_group = 2;
+}
+
+// Attributes that are specific to the CircleCI (`circleci`) join method.
+message JoinAttrsCircleCI {
+  // The `sub` claim of the CircleCI JWT that was used to join.
+  // For example: `org/ORGANIZATION_ID/project/PROJECT_ID/user/USER_ID`
+  string sub = 1;
+  // The UUIDs of the contexts used in the job.
+  repeated string context_ids = 2;
+  // The UUID of the project in which the job is running.
+  string project_id = 3;
+}
+
+// Attributes that are specific to the Bitbucket (`bitbucket`) join method.
+message JoinAttrsBitbucket {
+  // The `sub` claim of the Bitbucket JWT that was used to join.
+  string sub = 1;
+  // The UUID of the pipeline step.
+  string step_uuid = 2;
+  // The UUID of the repository the pipeline step is running within.
+  string repository_uuid = 3;
+  // The UUID of the pipeline the step is running within.
+  string pipeline_uuid = 4;
+  // The UUID of the workspace the pipeline belongs to.
+  string workspace_uuid = 5;
+  // The UUID of the deployment environment the pipeline is running against.
+  string deployment_environment_uuid = 6;
+  // The name of the branch the pipeline is running against.
+  string branch_name = 7;
 }
