@@ -97,7 +97,7 @@ func NewAzureWatcher(ctx context.Context, fetchersFn func() []Fetcher, opts ...O
 }
 
 // MatchersToAzureInstanceFetchers converts a list of Azure VM Matchers into a list of Azure VM Fetchers.
-func MatchersToAzureInstanceFetchers(matchers []types.AzureMatcher, clients azureClientGetter) []Fetcher {
+func MatchersToAzureInstanceFetchers(matchers []types.AzureMatcher, clients azureClientGetter, discoveryConfig string) []Fetcher {
 	ret := make([]Fetcher, 0)
 	for _, matcher := range matchers {
 		for _, subscription := range matcher.Subscriptions {
@@ -107,6 +107,7 @@ func MatchersToAzureInstanceFetchers(matchers []types.AzureMatcher, clients azur
 					Subscription:      subscription,
 					ResourceGroup:     resourceGroup,
 					AzureClientGetter: clients,
+					DiscoveryConfig:   discoveryConfig,
 				})
 				ret = append(ret, fetcher)
 			}
@@ -120,6 +121,7 @@ type azureFetcherConfig struct {
 	Subscription      string
 	ResourceGroup     string
 	AzureClientGetter azureClientGetter
+	DiscoveryConfig   string
 }
 
 type azureInstanceFetcher struct {
@@ -130,6 +132,7 @@ type azureInstanceFetcher struct {
 	Labels            types.Labels
 	Parameters        map[string]string
 	ClientID          string
+	DiscoveryConfig   string
 }
 
 func newAzureInstanceFetcher(cfg azureFetcherConfig) *azureInstanceFetcher {
@@ -139,6 +142,7 @@ func newAzureInstanceFetcher(cfg azureFetcherConfig) *azureInstanceFetcher {
 		Subscription:      cfg.Subscription,
 		ResourceGroup:     cfg.ResourceGroup,
 		Labels:            cfg.Matcher.ResourceTags,
+		DiscoveryConfig:   cfg.DiscoveryConfig,
 	}
 
 	if cfg.Matcher.Params != nil {
@@ -155,6 +159,10 @@ func newAzureInstanceFetcher(cfg azureFetcherConfig) *azureInstanceFetcher {
 
 func (*azureInstanceFetcher) GetMatchingInstances(_ []types.Server, _ bool) ([]Instances, error) {
 	return nil, trace.NotImplemented("not implemented for azure fetchers")
+}
+
+func (f *azureInstanceFetcher) GetDiscoveryConfig() string {
+	return f.DiscoveryConfig
 }
 
 // GetInstances fetches all Azure virtual machines matching configured filters.
