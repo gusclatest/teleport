@@ -185,7 +185,8 @@ func MatchResourceByFilters(resource types.ResourceWithLabels, filter MatchResou
 		default:
 			return false, trace.BadParameter("expected types.SAMLIdPServiceProvider or types.AppServer, got %T", resource)
 		}
-	case types.KindIdentityCenterAccount:
+	case types.KindIdentityCenterAccount,
+		types.KindIdentityCenterAccountAssignment:
 		specResource = resource
 	default:
 		// We check if the resource kind is a Kubernetes resource kind to reduce the amount of

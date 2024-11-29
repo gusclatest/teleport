@@ -1367,7 +1367,8 @@ func (a *ServerWithRoles) ListUnifiedResources(ctx context.Context, req *proto.L
 		}
 
 		actionChecker := a.action
-		if kind == types.KindIdentityCenterAccount {
+		if kind == types.KindIdentityCenterAccount ||
+			kind == types.KindIdentityCenterAccountAssignment {
 			actionChecker = a.identityCenterAction
 		}
 
@@ -1709,14 +1710,16 @@ func (a *ServerWithRoles) ListResources(ctx context.Context, req proto.ListResou
 		types.KindWindowsDesktopService,
 		types.KindUserGroup,
 		types.KindSAMLIdPServiceProvider,
-		types.KindIdentityCenterAccount:
+		types.KindIdentityCenterAccount,
+		types.KindIdentityCenterAccountAssignment:
 
 	default:
 		return nil, trace.NotImplemented("resource type %s does not support pagination", req.ResourceType)
 	}
 
 	actionChecker := a.action
-	if req.ResourceType == types.KindIdentityCenterAccount {
+	if req.ResourceType == types.KindIdentityCenterAccount ||
+		req.ResourceType == types.KindIdentityCenterAccountAssignment {
 		actionChecker = a.identityCenterAction
 	}
 
@@ -1850,7 +1853,8 @@ func (r resourceChecker) CanAccess(resource types.Resource) error {
 
 	case *types.Resource153ToLegacyAdapter:
 		switch rr.Unwrap().(type) {
-		case services.IdentityCenterAccount:
+		case services.IdentityCenterAccount,
+			services.IdentityCenterAccountAssignment:
 			return r.CheckAccess(rr, state)
 		}
 	}
@@ -1871,7 +1875,8 @@ func (a *ServerWithRoles) newResourceAccessChecker(resource string) (resourceAcc
 		types.KindUserGroup,
 		types.KindUnifiedResource,
 		types.KindSAMLIdPServiceProvider,
-		types.KindIdentityCenterAccount:
+		types.KindIdentityCenterAccount,
+		types.KindIdentityCenterAccountAssignment:
 		return &resourceChecker{AccessChecker: a.context.Checker}, nil
 	default:
 		return nil, trace.BadParameter("could not check access to resource type %s", resource)

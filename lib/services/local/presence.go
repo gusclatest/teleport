@@ -1377,6 +1377,9 @@ func (s *PresenceService) listResources(ctx context.Context, req proto.ListResou
 	case types.KindIdentityCenterAccount:
 		keyPrefix = []string{awsResourcePrefix, awsAccountPrefix}
 		unmarshalItemFunc = backendItemToIdentityCenterAccount
+	case types.KindIdentityCenterAccountAssignment:
+		keyPrefix = []string{awsResourcePrefix, awsAccountAssignmentPrefix}
+		unmarshalItemFunc = backendItemToIdentityCenterAccountAssignment
 	default:
 		return nil, trace.NotImplemented("%s not implemented at ListResources", req.ResourceType)
 	}
@@ -1776,6 +1779,20 @@ func backendItemToIdentityCenterAccount(item backend.Item) (types.ResourceWithLa
 	}
 	return types.Resource153ToLegacy(
 		services.IdentityCenterAccount{Account: assignment},
+	), nil
+}
+
+func backendItemToIdentityCenterAccountAssignment(item backend.Item) (types.ResourceWithLabels, error) {
+	assignment, err := services.UnmarshalProtoResource[*identitycenterv1.AccountAssignment](
+		item.Value,
+		services.WithExpires(item.Expires),
+		services.WithRevision(item.Revision),
+	)
+	if err != nil {
+		return nil, trace.Wrap(err)
+	}
+	return types.Resource153ToLegacy(
+		services.IdentityCenterAccountAssignment{AccountAssignment: assignment},
 	), nil
 }
 

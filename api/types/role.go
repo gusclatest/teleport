@@ -1947,7 +1947,8 @@ func (r *RoleV6) GetLabelMatchers(rct RoleConditionType, kind string) (LabelMatc
 	case KindGitServer:
 		return r.makeGitServerLabelMatchers(cond), nil
 	case KindIdentityCenter,
-		KindIdentityCenterAccount:
+		KindIdentityCenterAccount, 
+		KindIdentityCenterAccountAssignment:
 		return LabelMatchers{cond.AccountAssignmentLabels, cond.AccountAssignmentLabelsExpression}, nil
 	}
 	return LabelMatchers{}, trace.BadParameter("can't get label matchers for resource kind %q", kind)

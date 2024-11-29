@@ -3420,7 +3420,7 @@ message RoleConditions {
     (gogoproto.jsontag) = "github_permissions,omitempty"
   ];
 
-  // AccountAssignmentLabels is the label set used to match anu sort of
+  // AccountAssignmentLabels is the label set used to match any sort of
   // Identity Center
   wrappers.LabelValues AccountAssignmentLabels = 44 [
     (gogoproto.nullable) = false,
@@ -3428,6 +3428,8 @@ message RoleConditions {
     (gogoproto.customtype) = "Labels"
   ];
 
+  // AccountAssignmentLabelsExpression is an expression used to select
+  // any sort of Identity Center resource
   string AccountAssignmentLabelsExpression = 45 [(gogoproto.jsontag) = "account_assignment_labels_expression,omitempty"];
 }
 

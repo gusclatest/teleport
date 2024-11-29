@@ -8694,9 +8694,11 @@ type RoleConditions struct {
 	AccountAssignments []IdentityCenterAccountAssignment `protobuf:"bytes,42,rep,name=AccountAssignments,proto3" json:"account_assignments,omitempty"`
 	// GitHubPermissions defines GitHub integration related permissions.
 	GitHubPermissions []GitHubPermission `protobuf:"bytes,43,rep,name=git_hub_permissions,json=gitHubPermissions,proto3" json:"github_permissions,omitempty"`
-	// AccountAssignmentLabels is the label set used to match anu sort of
+	// AccountAssignmentLabels is the label set used to match any sort of
 	// Identity Center
-	AccountAssignmentLabels           Labels   `protobuf:"bytes,44,opt,name=AccountAssignmentLabels,proto3,customtype=Labels" json:"account_assignment_labels,omitempty"`
+	AccountAssignmentLabels Labels `protobuf:"bytes,44,opt,name=AccountAssignmentLabels,proto3,customtype=Labels" json:"account_assignment_labels,omitempty"`
+	// AccountAssignmentLabelsExpression is an expression used to select
+	// any sort of Identity Center resource
 	AccountAssignmentLabelsExpression string   `protobuf:"bytes,45,opt,name=AccountAssignmentLabelsExpression,proto3" json:"account_assignment_labels_expression,omitempty"`
 	XXX_NoUnkeyedLiteral              struct{} `json:"-"`
 	XXX_unrecognized                  []byte   `json:"-"`
