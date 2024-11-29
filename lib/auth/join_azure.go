@@ -409,6 +409,7 @@ func (a *Server) RegisterUsingAzureMethodWithOpts(
 			provisionToken,
 			req.RegisterUsingTokenRequest,
 			nil,
+			nil,
 		)
 		return certs, trace.Wrap(err)
 	}

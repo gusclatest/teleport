@@ -31,9 +31,6 @@ import (
 	"github.com/gravitational/trace"
 	"github.com/sirupsen/logrus"
 	"google.golang.org/grpc/peer"
-	"google.golang.org/protobuf/encoding/protojson"
-	googleproto "google.golang.org/protobuf/proto"
-	"google.golang.org/protobuf/types/known/structpb"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	"github.com/gravitational/teleport/api/client/proto"
@@ -98,12 +95,6 @@ func (a *Server) checkTokenJoinRequestCommon(ctx context.Context, req *types.Reg
 	}
 
 	return provisionToken, nil
-}
-
-type joinAttributeSourcer interface {
-	// JoinAuditAttributes returns a series of attributes that can be inserted into
-	// audit events related to a specific join.
-	JoinAuditAttributes() (map[string]interface{}, error)
 }
 
 func setRemoteAddrFromContext(ctx context.Context, req *types.RegisterUsingTokenRequest) error {
@@ -244,7 +235,7 @@ func (a *Server) RegisterUsingToken(ctx context.Context, req *types.RegisterUsin
 		claims, err := a.checkGitHubJoinRequest(ctx, req)
 		if claims != nil {
 			untypedAttrs = claims
-			attrs.Gitlab = claims.JoinAttrs()
+			attrs.Github = claims.JoinAttrs()
 		}
 		if err != nil {
 			return nil, trace.Wrap(err)
@@ -401,7 +392,7 @@ func (a *Server) generateCertsBot(
 	if attrs == nil {
 		attrs = &workloadidentityv1pb.JoinAttrs{}
 	}
-	attrs.Meta = &workloadidentityv1pb.MetaJoinAttrs{
+	attrs.Meta = &workloadidentityv1pb.JoinAttrsMeta{
 		JoinMethod: string(joinMethod),
 	}
 	if joinMethod != types.JoinMethodToken {
