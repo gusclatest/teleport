@@ -199,6 +199,7 @@ func ForAuth(cfg Config) Config {
 		{Kind: types.KindIdentityCenterPrincipalAssignment},
 		{Kind: types.KindIdentityCenterAccountAssignment},
 		{Kind: types.KindPluginStaticCredentials},
+		{Kind: types.KindWorkloadIdentity},
 	}
 	cfg.QueueSize = defaults.AuthQueueSize
 	// We don't want to enable partial health for auth cache because auth uses an event stream
@@ -552,6 +553,7 @@ type Cache struct {
 	provisioningStatesCache      *local.ProvisioningStateService
 	identityCenterCache          *local.IdentityCenterService
 	pluginStaticCredentialsCache *local.PluginStaticCredentialsService
+	workloadIdentityCache        workloadIdentityCacher
 
 	// closed indicates that the cache has been closed
 	closed atomic.Bool
@@ -734,6 +736,9 @@ type Config struct {
 	SPIFFEFederations SPIFFEFederationReader
 	// StaticHostUsers is the static host user service.
 	StaticHostUsers services.StaticHostUser
+	// WorkloadIdentity is the upstream Workload Identities service that we're
+	// caching
+	WorkloadIdentity WorkloadIdentityReader
 	// Backend is a backend for local cache
 	Backend backend.Backend
 	// MaxRetryPeriod is the maximum period between cache retries on failures
@@ -1002,6 +1007,12 @@ func New(config Config) (*Cache, error) {
 		return nil, trace.Wrap(err)
 	}
 
+	workloadIdentityCache, err := local.NewWorkloadIdentityService(config.Backend)
+	if err != nil {
+		cancel()
+		return nil, trace.Wrap(err)
+	}
+
 	staticHostUserCache, err := local.NewStaticHostUserService(config.Backend)
 	if err != nil {
 		cancel()
@@ -1081,6 +1092,7 @@ func New(config Config) (*Cache, error) {
 		provisioningStatesCache:      provisioningStatesCache,
 		identityCenterCache:          identityCenterCache,
 		pluginStaticCredentialsCache: pluginStaticCredentialsCache,
+		workloadIdentityCache:        workloadIdentityCache,
 		Logger: log.WithFields(log.Fields{
 			teleport.ComponentKey: config.Component,
 		}),
