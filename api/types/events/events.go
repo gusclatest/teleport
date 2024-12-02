@@ -2352,3 +2352,15 @@ func (m *AutoUpdateVersionUpdate) TrimToMaxSize(_ int) AuditEvent {
 func (m *AutoUpdateVersionDelete) TrimToMaxSize(_ int) AuditEvent {
 	return m
 }
+
+func (m *WorkloadIdentityCreate) TrimToMaxSize(_ int) AuditEvent {
+	return m
+}
+
+func (m *WorkloadIdentityUpdate) TrimToMaxSize(_ int) AuditEvent {
+	return m
+}
+
+func (m *WorkloadIdentityDelete) TrimToMaxSize(_ int) AuditEvent {
+	return m
+}
