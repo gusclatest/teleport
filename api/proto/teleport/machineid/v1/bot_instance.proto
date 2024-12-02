@@ -17,6 +17,7 @@ syntax = "proto3";
 package teleport.machineid.v1;
 
 import "google/protobuf/duration.proto";
+import "google/protobuf/struct.proto";
 import "google/protobuf/timestamp.proto";
 import "teleport/header/v1/metadata.proto";
 import "teleport/workloadidentity/v1/attributes.proto";
@@ -95,9 +96,9 @@ message BotInstanceStatusAuthentication {
   // delegated join methods as the value for `token` join methods is sensitive.
   // Deprecated: prefer using join_attrs.meta.join_token_name
   string join_token = 3;
-
-  reserved 4;
-  reserved "metadata";
+  // The metadata sourced from the join method.
+  // Deprecated: per using join_attrs.
+  google.protobuf.Struct metadata = 4;
 
   // On each renewal, this generation is incremented. For delegated join
   // methods, this counter is not checked during renewal. For the `token` join

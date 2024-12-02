@@ -31,6 +31,7 @@ import (
 	"github.com/gravitational/trace"
 	"github.com/sirupsen/logrus"
 	"google.golang.org/grpc/peer"
+	"google.golang.org/protobuf/types/known/structpb"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	"github.com/gravitational/teleport/api/client/proto"
@@ -417,6 +418,12 @@ func (a *Server) generateCertsBot(
 		PublicKey: req.PublicTLSKey,
 		JoinAttrs: attrs,
 	}
+	// TODO(noah): In v18, we can drop writing to the deprecated Metadata field.
+	auth.Metadata, err = rawJoinAttrsToGoogleStruct(rawJoinClaims)
+	if err != nil {
+		log.WithError(err).Warn("Unable to encode join attributes for bot instance authentication event.")
+	}
+
 	certs, botInstanceID, err := a.generateInitialBotCerts(
 		ctx,
 		botName,
@@ -536,6 +543,21 @@ func rawJoinAttrsToStruct(in any) (*apievents.Struct, error) {
 		return nil, trace.Wrap(err, "marshaling join attributes")
 	}
 	out := &apievents.Struct{}
+	if err := out.UnmarshalJSON(attrBytes); err != nil {
+		return nil, trace.Wrap(err, "unmarshaling join attributes")
+	}
+	return out, nil
+}
+
+func rawJoinAttrsToGoogleStruct(in any) (*structpb.Struct, error) {
+	if in == nil {
+		return nil, nil
+	}
+	attrBytes, err := json.Marshal(in)
+	if err != nil {
+		return nil, trace.Wrap(err, "marshaling join attributes")
+	}
+	out := &structpb.Struct{}
 	if err := out.UnmarshalJSON(attrBytes); err != nil {
 		return nil, trace.Wrap(err, "unmarshaling join attributes")
 	}
