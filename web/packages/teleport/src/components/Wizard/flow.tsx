@@ -19,6 +19,7 @@
 export type BaseView<T> = T & {
   hide?: boolean;
   index?: number;
+  visibleIndex?: number;
   views?: BaseView<T>[];
   title: string;
 };
@@ -48,7 +49,8 @@ export function computeViewChildrenSize<T>(views: BaseView<T>[]) {
  */
 export function addIndexToViews<T>(
   views: BaseView<T>[],
-  index = 0
+  index = 0,
+  visibleIndex = 0
 ): BaseView<T>[] {
   const result: BaseView<T>[] = [];
 
@@ -65,6 +67,11 @@ export function addIndexToViews<T>(
       index += computeViewChildrenSize(view.views);
     } else {
       index += 1;
+    }
+
+    if (!view.hide) {
+      copy.visibleIndex = visibleIndex;
+      visibleIndex += 1;
     }
 
     result.push(copy);
