@@ -457,12 +457,7 @@ type caTypeModel struct {
 func newCATypeModel(caType types.CertAuthType) *caTypeModel {
 	return &caTypeModel{
 		caType: caType,
-		form: huh.NewForm(huh.NewGroup(
-			huh.NewSelect[types.CertAuthType]().
-				Key("type").
-				Options(huh.NewOptions(types.CertAuthTypes...)...).
-				Title("Choose CA to rotate:"),
-		)).WithTheme(authRotateTheme.formTheme),
+		form:   newSelectForm("Choose CA to rotate:", types.CertAuthTypes...),
 	}
 }
 
@@ -480,7 +475,7 @@ func (m *caTypeModel) update(msg tea.Msg) tea.Cmd {
 	form, cmd := m.form.Update(msg)
 	m.form = form.(*huh.Form)
 	if m.form.State == huh.StateCompleted {
-		m.caType = m.form.Get("type").(types.CertAuthType)
+		m.caType = m.form.Get("selected").(types.CertAuthType)
 	}
 	return cmd
 }
@@ -599,12 +594,7 @@ func newTargetPhaseModel(caType types.CertAuthType, currentPhase string) *target
 	return &targetPhaseModel{
 		caType:       caType,
 		currentPhase: currentPhase,
-		form: huh.NewForm(huh.NewGroup(
-			huh.NewSelect[string]().
-				Key("phase").
-				Options(huh.NewOptions(options...)...).
-				Title("Select target phase"),
-		)).WithTheme(authRotateTheme.formTheme),
+		form:         newSelectForm("Select target phase:", options...),
 	}
 }
 
@@ -622,7 +612,7 @@ func (m *targetPhaseModel) update(msg tea.Msg) tea.Cmd {
 	form, cmd := m.form.Update(msg)
 	m.form = form.(*huh.Form)
 	if m.form.State == huh.StateCompleted {
-		m.targetPhase = m.form.GetString("phase")
+		m.targetPhase = m.form.GetString("selected")
 	}
 	return cmd
 }
@@ -1299,3 +1289,38 @@ type brokenStdinReader struct{}
 func (brokenStdinReader) IsTerminal() bool                               { return true }
 func (brokenStdinReader) ReadContext(_ context.Context) ([]byte, error)  { return nil, errNoStdin }
 func (brokenStdinReader) ReadPassword(_ context.Context) ([]byte, error) { return nil, errNoStdin }
+
+func newSelectForm[T comparable](title string, options ...T) *huh.Form {
+	keyMap := huh.NewDefaultKeyMap()
+	keyMap.Quit = key.NewBinding(key.WithKeys("q"), key.WithHelp("q", "quit"))
+	selectField := &fieldWithKeyBinds{
+		Field: huh.NewSelect[T]().
+			Key("selected").
+			Options(huh.NewOptions(options...)...).
+			Title(title),
+		keyBinds: []key.Binding{
+			keyMap.Select.Up,
+			keyMap.Select.Down,
+			keyMap.Select.Submit,
+			keyMap.Quit,
+		},
+	}
+	return huh.NewForm(
+		huh.NewGroup(selectField).WithKeyMap(keyMap),
+	).WithTheme(authRotateTheme.formTheme)
+}
+
+type fieldWithKeyBinds struct {
+	huh.Field
+	keyBinds []key.Binding
+}
+
+func (f *fieldWithKeyBinds) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	field, cmd := f.Field.Update(msg)
+	f.Field = field.(huh.Field)
+	return f, cmd
+}
+
+func (f *fieldWithKeyBinds) KeyBinds() []key.Binding {
+	return f.keyBinds
+}
