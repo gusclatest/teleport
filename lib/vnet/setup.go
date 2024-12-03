@@ -18,7 +18,6 @@ package vnet
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"os"
 	"time"
@@ -66,64 +65,71 @@ func SetupAndRun(ctx context.Context, config *SetupAndRunConfig) (*ProcessManage
 		}
 	}()
 
-	// Create the socket that's used to receive the TUN device from the admin process.
-	socket, socketPath, err := createUnixSocket()
+	// NIC temporary just create TUN here, run as root.
+	tun, tunName, err := createTUNDevice(ctx)
 	if err != nil {
-		return nil, trace.Wrap(err)
+		return nil, trace.Wrap(err, "creating TUN device")
 	}
-	log.DebugContext(ctx, "Created unix socket for admin process", "socket", socketPath)
-	pm.AddCriticalBackgroundTask("socket closer", func() error {
-		// Keep the socket open until the process context is canceled.
-		// Closing the socket signals the admin process to terminate.
-		<-processCtx.Done()
-		return trace.NewAggregate(processCtx.Err(), socket.Close())
-	})
+	fmt.Println("NIC created TUN", tunName)
 
-	pm.AddCriticalBackgroundTask("admin process", func() error {
-		daemonConfig := daemon.Config{
-			SocketPath: socketPath,
-			IPv6Prefix: ipv6Prefix.String(),
-			DNSAddr:    dnsIPv6.String(),
-			HomePath:   config.HomePath,
-		}
-		return trace.Wrap(execAdminProcess(processCtx, daemonConfig))
-	})
+	// // Create the socket that's used to receive the TUN device from the admin process.
+	// socket, socketPath, err := createUnixSocket()
+	// if err != nil {
+	// 	return nil, trace.Wrap(err)
+	// }
+	// log.DebugContext(ctx, "Created unix socket for admin process", "socket", socketPath)
+	// pm.AddCriticalBackgroundTask("socket closer", func() error {
+	// 	// Keep the socket open until the process context is canceled.
+	// 	// Closing the socket signals the admin process to terminate.
+	// 	<-processCtx.Done()
+	// 	return trace.NewAggregate(processCtx.Err(), socket.Close())
+	// })
 
-	recvTUNErr := make(chan error, 1)
-	var tun tun.Device
-	go func() {
-		// Unblocks after receiving a TUN device or when the context gets canceled (and thus socket gets
-		// closed).
-		tunDevice, err := receiveTUNDevice(socket)
-		tun = tunDevice
-		recvTUNErr <- err
-	}()
+	// pm.AddCriticalBackgroundTask("admin process", func() error {
+	// 	daemonConfig := daemon.Config{
+	// 		SocketPath: socketPath,
+	// 		IPv6Prefix: ipv6Prefix.String(),
+	// 		DNSAddr:    dnsIPv6.String(),
+	// 		HomePath:   config.HomePath,
+	// 	}
+	// 	return trace.Wrap(execAdminProcess(processCtx, daemonConfig))
+	// })
 
-	// It should be more than waitingForEnablementTimeout in the vnet/daemon package
-	// so that the user sees the error about the background item first.
-	const receiveTunTimeout = time.Minute
-	receiveTunCtx, cancel := context.WithTimeoutCause(ctx, receiveTunTimeout,
-		errors.New("admin process did not send back TUN device within timeout"))
-	defer cancel()
+	// recvTUNErr := make(chan error, 1)
+	// var tun tun.Device
+	// go func() {
+	// 	// Unblocks after receiving a TUN device or when the context gets canceled (and thus socket gets
+	// 	// closed).
+	// 	tunDevice, err := receiveTUNDevice(socket)
+	// 	tun = tunDevice
+	// 	recvTUNErr <- err
+	// }()
 
-	select {
-	case <-receiveTunCtx.Done():
-		return nil, trace.Wrap(context.Cause(receiveTunCtx))
-	case <-processCtx.Done():
-		return nil, trace.Wrap(context.Cause(processCtx))
-	case err := <-recvTUNErr:
-		if err != nil {
-			if processCtx.Err() != nil {
-				// Both errors being present means that VNet failed to receive a TUN device because of a
-				// problem with the admin process.
-				// Returning error from processCtx will be more informative to the user, e.g., the error
-				// will say "password prompt closed by user" instead of "read from closed socket".
-				log.DebugContext(ctx, "Error from recvTUNErr ignored in favor of processCtx.Err", "error", err)
-				return nil, trace.Wrap(context.Cause(processCtx))
-			}
-			return nil, trace.Wrap(err, "receiving TUN device from admin process")
-		}
-	}
+	// // It should be more than waitingForEnablementTimeout in the vnet/daemon package
+	// // so that the user sees the error about the background item first.
+	// const receiveTunTimeout = time.Minute
+	// receiveTunCtx, cancel := context.WithTimeoutCause(ctx, receiveTunTimeout,
+	// 	errors.New("admin process did not send back TUN device within timeout"))
+	// defer cancel()
+
+	// select {
+	// case <-receiveTunCtx.Done():
+	// 	return nil, trace.Wrap(context.Cause(receiveTunCtx))
+	// case <-processCtx.Done():
+	// 	return nil, trace.Wrap(context.Cause(processCtx))
+	// case err := <-recvTUNErr:
+	// 	if err != nil {
+	// 		if processCtx.Err() != nil {
+	// 			// Both errors being present means that VNet failed to receive a TUN device because of a
+	// 			// problem with the admin process.
+	// 			// Returning error from processCtx will be more informative to the user, e.g., the error
+	// 			// will say "password prompt closed by user" instead of "read from closed socket".
+	// 			log.DebugContext(ctx, "Error from recvTUNErr ignored in favor of processCtx.Err", "error", err)
+	// 			return nil, trace.Wrap(context.Cause(processCtx))
+	// 		}
+	// 		return nil, trace.Wrap(err, "receiving TUN device from admin process")
+	// 	}
+	// }
 
 	appResolver, err := NewTCPAppResolver(config.AppProvider,
 		WithClusterConfigCache(config.ClusterConfigCache))
