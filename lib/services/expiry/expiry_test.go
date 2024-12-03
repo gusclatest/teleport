@@ -38,8 +38,6 @@ func TestExpiry(t *testing.T) {
 	clock := clockwork.NewFakeClock()
 
 	dataDir := t.TempDir()
-	// hostUUID := uuid.New().String()
-	// login := uuid.New().String()
 
 	authServer, err := auth.NewTestAuthServer(auth.TestAuthServerConfig{
 		ClusterName: "root.example.com",
@@ -62,6 +60,9 @@ func TestExpiry(t *testing.T) {
 	expiry, err := New(ctx, cfg)
 	require.NoError(t, err)
 
+	scanInterval = time.Second
+	pendingRequestGracePeriod = time.Second
+
 	go func() {
 		err := expiry.Start()
 		require.NoError(t, err)
@@ -77,24 +78,12 @@ func TestExpiry(t *testing.T) {
 	req2Name := uuid.New().String()
 	req2, err := types.NewAccessRequest(req2Name, "someUser", "someRole")
 	require.NoError(t, err)
-	req2.SetExpiry(clock.Now().Add(scanInterval * 10))
+	req2.SetExpiry(clock.Now().Add(scanInterval * 2))
 	err = authServer.AuthServer.CreateAccessRequest(ctx, req2)
 	require.NoError(t, err)
 
-	// Wait until expiry scanner picks up first request and expires it
-	clock.BlockUntil(2)
-	clock.Advance(scanInterval*5 + expiryInterval*2) // Scanner will have seen request by here
-
 	require.Eventually(t, func() bool {
-		return len(mockEmitter.Events()) == 1
-	}, time.Second*5, time.Second/2)
-
-	// Wait until expiry scanner picks up second request and expires it
-	clock.Advance(scanInterval*20 + expiryInterval*2) // Scanner will have seen request by here
-
-	// Ensure second request has expired
-	require.Eventually(t, func() bool {
-		clock.BlockUntil(2)
+		clock.Advance(scanInterval*5)
 		return len(mockEmitter.Events()) == 2
-	}, time.Second*5, time.Second/2)
+	}, scanInterval*5, time.Second/2)
 }

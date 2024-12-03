@@ -445,8 +445,7 @@ func (r *AccessRequestV3) SetName(name string) {
 
 // Expiry gets Expiry
 func (r *AccessRequestV3) Expiry() time.Time {
-	// If resource expiry is not set, assume request was created before creation of
-	// explicit access request expiry service and use resource expiry.
+	// Fallback on existing expiry in metadata if not set in spec.
 	if r.Spec.ResourceExpiry != nil {
 		return *r.Spec.ResourceExpiry
 	}

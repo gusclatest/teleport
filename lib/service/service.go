@@ -147,6 +147,7 @@ import (
 	secretsscannerproxy "github.com/gravitational/teleport/lib/secretsscanner/proxy"
 	"github.com/gravitational/teleport/lib/service/servicecfg"
 	"github.com/gravitational/teleport/lib/services"
+	"github.com/gravitational/teleport/lib/services/expiry"
 	"github.com/gravitational/teleport/lib/services/local"
 	"github.com/gravitational/teleport/lib/srv"
 	"github.com/gravitational/teleport/lib/srv/alpnproxy"
@@ -156,7 +157,6 @@ import (
 	"github.com/gravitational/teleport/lib/srv/db"
 	"github.com/gravitational/teleport/lib/srv/debug"
 	"github.com/gravitational/teleport/lib/srv/desktop"
-	"github.com/gravitational/teleport/lib/srv/expiry"
 	"github.com/gravitational/teleport/lib/srv/ingress"
 	"github.com/gravitational/teleport/lib/srv/regular"
 	"github.com/gravitational/teleport/lib/srv/transport/transportv1"
@@ -2453,7 +2453,7 @@ func (process *TeleportProcess) initAuthService() error {
 
 	expiry, err := expiry.New(process.ExitContext(), &expiry.Config{
 		Log: logger.With(
-			teleport.ComponentKey, teleport.Component(teleport.ComponentAuth, "access_request_expiry"),
+			teleport.ComponentKey, teleport.Component(teleport.ComponentAuth, "expiry_service"),
 		),
 		Emitter:     authServer,
 		AccessPoint: authServer.Services,

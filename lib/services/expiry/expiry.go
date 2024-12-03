@@ -21,17 +21,24 @@ package expiry
 import (
 	"context"
 	"log/slog"
-	"sync"
 	"time"
 
+	"github.com/gravitational/teleport/api/client/proto"
 	"github.com/gravitational/teleport/api/types"
 	apievents "github.com/gravitational/teleport/api/types/events"
 	"github.com/gravitational/teleport/api/utils/retryutils"
 	"github.com/gravitational/teleport/lib/auth/authclient"
 	"github.com/gravitational/teleport/lib/events"
 	"github.com/gravitational/teleport/lib/services"
+	"github.com/gravitational/teleport/lib/utils/interval"
 	"github.com/gravitational/trace"
 	"github.com/jonboulle/clockwork"
+)
+
+var (
+	// scanInterval is the interval at which the expiry checker scans for access requests
+	scanInterval = time.Minute * 5
+	pendingRequestGracePeriod = time.Second * 40
 )
 
 const (
@@ -39,10 +46,10 @@ const (
 	semaphoreExpiration = time.Minute
 	semaphoreJitter     = time.Minute
 
-	// scanInterval is the interval at which the expiry checker scans for access requests
-	scanInterval = time.Minute * 5
-	// expiryInterval is the interval at which access request deletions are rate limited to
-	expiryInterval = time.Second * 10
+	// minPageDelay is the minimum delay between processing each page of access requests
+	minPageDelay           = time.Millisecond * 200
+	accessRequestPageLimit = 100
+	maxExpiresPerCycle     = 120
 )
 
 // Config provides configuration for the expiry server.
@@ -79,10 +86,6 @@ type Service struct {
 
 	ctx      context.Context
 	cancelfn context.CancelFunc
-
-	toExpireMut         sync.RWMutex
-	requestsToExpire    []types.AccessRequest
-	requestsToExpireSet map[string]bool
 }
 
 // New initializes a expiry service
@@ -92,9 +95,8 @@ func New(ctx context.Context, cfg *Config) (*Service, error) {
 	}
 
 	s := &Service{
-		Config:              cfg,
-		ctx:                 ctx,
-		requestsToExpireSet: make(map[string]bool),
+		Config: cfg,
+		ctx:    ctx,
 	}
 	return s, nil
 }
@@ -123,92 +125,89 @@ func (s *Service) Start() error {
 		},
 	}
 
-	// Work through the expired requests at a rate of 1 every expiryInterval
-	go func() {
-		for {
-			select {
-			case <-s.ctx.Done():
-				return
-			case <-s.Clock.After(retryutils.SeventhJitter(expiryInterval)):
-				lease, err := services.AcquireSemaphoreLockWithRetry(
-					s.ctx,
-					semCfg,
-				)
-				if err != nil {
-					s.Log.WarnContext(s.ctx, "aquiring semaphore", "error", err)
-					return
-				}
+	poll := interval.New(interval.Config{
+		Duration:      scanInterval,
+		FirstDuration: retryutils.FullJitter(scanInterval),
+		Jitter:        retryutils.SeventhJitter,
+		Clock:         s.Clock,
+	})
+	defer poll.Stop()
 
-				s.toExpireMut.Lock()
-				if len(s.requestsToExpire) > 0 {
-					req := s.requestsToExpire[0]
-					s.requestsToExpire = s.requestsToExpire[1:]
-					delete(s.requestsToExpireSet, req.GetName())
-					if err := s.expireRequest(s.ctx, req); err != nil {
-						s.Log.WarnContext(s.ctx, "error expiring access request", "error", err)
-						s.requestsToExpire = append(s.requestsToExpire, req)
-						s.requestsToExpireSet[req.GetName()] = true
-					}
-				}
-				s.toExpireMut.Unlock()
-
-				ctx, cancel := context.WithCancel(lease)
-				defer cancel()
-				lease.Stop()
-				if err := lease.Wait(); err != nil {
-					s.Log.WarnContext(ctx, "error cleaning up semaphore", "error", err)
-				}
-			}
-		}
-	}()
 	for {
+		lease, err := services.AcquireSemaphoreLockWithRetry(
+			s.ctx,
+			semCfg,
+		)
+		if err != nil {
+			return trace.Wrap(err)
+		}
+
+		s.processRequests()
+
+		ctx, cancel := context.WithCancel(lease)
+		defer cancel()
+		lease.Stop()
+		if err := lease.Wait(); err != nil {
+			s.Log.WarnContext(ctx, "error cleaning up semaphore", "error", err)
+		}
 		select {
 		case <-s.ctx.Done():
 			return nil
-		case <-s.Clock.After(retryutils.SeventhJitter(scanInterval)):
-			lease, err := services.AcquireSemaphoreLockWithRetry(
-				s.ctx,
-				semCfg,
-			)
-			if err != nil {
-				return trace.Wrap(err)
-			}
-
-			requests, err := s.AccessPoint.GetAccessRequests(s.ctx, types.AccessRequestFilter{})
-			if err != nil {
-				return trace.Wrap(err)
-			}
-			if err := s.processAccessRequests(s.ctx, requests); err != nil {
-				s.Log.WarnContext(s.ctx, "error expiring access requests", "error", err)
-			}
-
-			ctx, cancel := context.WithCancel(lease)
-			defer cancel()
-			lease.Stop()
-			if err := lease.Wait(); err != nil {
-				s.Log.WarnContext(ctx, "error cleaning up semaphore", "error", err)
-			}
+		case <-poll.Next():
 		}
 	}
 }
-
-func (s *Service) processAccessRequests(ctx context.Context, requests []types.AccessRequest) error {
-	for _, req := range requests {
-		if s.Clock.Now().Before(req.Expiry()) {
-			continue
+func (s *Service) processRequests() error {
+	requestsExpired := 0
+	nextPageStart := ""
+	for {
+		var page []*types.AccessRequestV3
+		var err error
+		page, nextPageStart, err = s.getNextPageOfAccessRequests(nextPageStart)
+		if err != nil {
+			return trace.Wrap(err)
 		}
-		s.addToExpiryQueue(ctx, req)
+		if len(page) == 0 || requestsExpired >= maxExpiresPerCycle {
+			return nil
+		}
+		minPageDelay := time.After(retryutils.SeventhJitter(minPageDelay))
+		for _, req := range page {
+			if !s.shouldExpire(req) {
+				continue
+			}
+			if err := s.expireRequest(s.ctx, req); err != nil {
+				return trace.Wrap(err)
+			}
+			requestsExpired++
+			if requestsExpired >= maxExpiresPerCycle {
+				return nil
+			}
+		}
+		<-minPageDelay
 	}
-	return nil
 }
 
-func (s *Service) addToExpiryQueue(ctx context.Context, req types.AccessRequest) {
-	s.toExpireMut.Lock()
-	defer s.toExpireMut.Unlock()
-	if _, ok := s.requestsToExpireSet[req.GetName()]; !ok {
-		s.requestsToExpireSet[req.GetName()] = true
-		s.requestsToExpire = append(s.requestsToExpire, req)
+func (s *Service) getNextPageOfAccessRequests(startKey string) ([]*types.AccessRequestV3, string, error) {
+	req := &proto.ListAccessRequestsRequest{
+		Sort:       proto.AccessRequestSort_CREATED,
+		Descending: true,
+		Limit:      accessRequestPageLimit,
+		StartKey:   startKey,
 	}
+	resp, err := s.AccessPoint.ListAccessRequests(s.ctx, req)
+	if err != nil {
+		return nil, "", trace.Wrap(err)
+	}
+
+	return resp.AccessRequests, resp.NextKey, nil
+}
+
+func (s *Service) shouldExpire(req types.AccessRequest) bool {
+	expires := req.Expiry()
+	if req.GetState() == types.RequestState_PENDING {
+		expires = expires.Add(pendingRequestGracePeriod)
+	}
+	return s.Clock.Now().After(expires)
 }
 
 func (s *Service) expireRequest(ctx context.Context, req types.AccessRequest) error {

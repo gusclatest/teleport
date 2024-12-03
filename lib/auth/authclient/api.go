@@ -821,8 +821,8 @@ type ExpiryAccessPoint interface {
 	// Semaphores provides semaphore operations
 	types.Semaphores
 
-	// GetAccessRequests gets all currently active access requests.
-	GetAccessRequests(ctx context.Context, filter types.AccessRequestFilter) ([]types.AccessRequest, error)
+	// ListAccessRequests is an access request getter with pagination and sorting options.
+	ListAccessRequests(ctx context.Context, req *proto.ListAccessRequestsRequest) (*proto.ListAccessRequestsResponse, error)
 
 	// DeleteAccessRequest deletes an access request.
 	DeleteAccessRequest(ctx context.Context, reqID string) error
