@@ -127,7 +127,7 @@ func (m *statusModel) renderText(w io.Writer, debug bool) error {
 			summaryTable.AddRow([]string{"", caPin})
 		}
 	}
-	if _, err := summaryTable.WriteTo(w); err != nil {
+	if err := summaryTable.WriteTo(w); err != nil {
 		return trace.Wrap(err)
 	}
 	fmt.Fprintln(w, "")
@@ -158,8 +158,7 @@ func (m *statusModel) renderText(w io.Writer, debug bool) error {
 			keysTable.AddRow(row)
 		}
 	}
-	_, err := keysTable.WriteTo(w)
-	return trace.Wrap(err)
+	return trace.Wrap(keysTable.WriteTo(w))
 }
 
 // sortRows sorts the rows by each column left to right.

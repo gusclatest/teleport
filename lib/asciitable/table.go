@@ -166,21 +166,19 @@ func (t *Table) truncateCell(colIndex int, cell string) (string, bool) {
 func (t *Table) AsBuffer() *bytes.Buffer {
 	var buffer bytes.Buffer
 	// Writes to bytes.Buffer never return an error.
-	_, _ = t.WriteTo(&buffer)
+	_ = t.WriteTo(&buffer)
 	return &buffer
 }
 
 func (t *Table) String() string {
 	var sb strings.Builder
 	// Writes to strings.Builder never return an error.
-	_, _ = t.WriteTo(&sb)
+	_ = t.WriteTo(&sb)
 	return sb.String()
 }
 
-// WriteTo writes the full table to [w] or else returns an error. It returns the
-// number of bytes written.
-func (t *Table) WriteTo(w io.Writer) (int, error) {
-	var written int
+// WriteTo writes the full table to [w] or else returns an error.
+func (t *Table) WriteTo(w io.Writer) error {
 	writer := tabwriter.NewWriter(w, 5, 0, 1, ' ', 0)
 	template := strings.Repeat("%v\t", len(t.columns))
 
@@ -193,15 +191,11 @@ func (t *Table) WriteTo(w io.Writer) (int, error) {
 			colh = append(colh, col.Title)
 			cols = append(cols, strings.Repeat("-", col.width))
 		}
-		n, err := fmt.Fprintf(writer, template+"\n", colh...)
-		written += n
-		if err != nil {
-			return written, trace.Wrap(err)
+		if _, err := fmt.Fprintf(writer, template+"\n", colh...); err != nil {
+			return trace.Wrap(err)
 		}
-		n, err = fmt.Fprintf(writer, template+"\n", cols...)
-		written += n
-		if err != nil {
-			return written, trace.Wrap(err)
+		if _, err := fmt.Fprintf(writer, template+"\n", cols...); err != nil {
+			return trace.Wrap(err)
 		}
 	}
 
@@ -216,29 +210,23 @@ func (t *Table) WriteTo(w io.Writer) (int, error) {
 			}
 			rowi = append(rowi, cell)
 		}
-		n, err := fmt.Fprintf(writer, template+"\n", rowi...)
-		written += n
-		if err != nil {
-			return written, trace.Wrap(err)
+		if _, err := fmt.Fprintf(writer, template+"\n", rowi...); err != nil {
+			return trace.Wrap(err)
 		}
 	}
 
 	// Footnotes.
 	for label := range footnoteLabels {
-		n, err := fmt.Fprintln(writer)
-		written += n
-		if err != nil {
-			return written, trace.Wrap(err)
+		if _, err := fmt.Fprintln(writer); err != nil {
+			return trace.Wrap(err)
 		}
-		n, err = fmt.Fprintln(writer, label, t.footnotes[label])
-		written += n
-		if err != nil {
-			return written, trace.Wrap(err)
+		if _, err := fmt.Fprintln(writer, label, t.footnotes[label]); err != nil {
+			return trace.Wrap(err)
 		}
 	}
 
 	writer.Flush()
-	return written, nil
+	return nil
 }
 
 // IsHeadless returns true if none of the table title cells contains any text.
