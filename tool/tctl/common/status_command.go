@@ -97,7 +97,7 @@ func newStatusModel(ctx context.Context, client *authclient.Client, pingResp pro
 	for _, caType := range types.CertAuthTypes {
 		cas, err := client.GetCertAuthorities(ctx, caType, false)
 		if err != nil {
-			slog.WarnContext(ctx, "Failed to fetch CA.", "type", caType, "error", err)
+			slog.WarnContext(ctx, "Failed to fetch CA", "type", caType, "error", err)
 			continue
 		}
 		authorities = append(authorities, cas...)
