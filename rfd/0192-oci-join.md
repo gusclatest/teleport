@@ -144,13 +144,22 @@ joining node to get signed requests for each compartment.
 
 ### Security
 
-Teleport will sanitize the claims in the key ID JWT provided by the instance
+To mitigate SSRF, Teleport will sanitize the claims in the key ID JWT provided by the instance
 to ensure that they are
-[properly formed OCIDs](https://docs.oracle.com/en-us/iaas/Content/General/Concepts/identifiers.htm).
-Beyond that, Teleport will not verify the claims. This is because the needed JWKs will always be behind a
+[properly formed OCIDs](https://docs.oracle.com/en-us/iaas/Content/General/Concepts/identifiers.htm),
+including verifying that the region in the instance OCID is valid.
+
+To mitigate replay attacks, Teleport will verify that the JWT is not expired
+and was not issued in the future (with a leeway of 2 minutes, the same as the
+other JWT-based join methods). The Oracle API will also verify that the Date
+header in the signed request is
+[within 5 minutes](https://docs.oracle.com/en-us/iaas/Content/API/Concepts/usingapi.htm#clock)
+of its own clock.
+
+Teleport will not verify signature of the JWT. This is because the needed JWKs will always be behind a
 [non-public API](https://docs.oracle.com/en-us/iaas/Content/APIGateway/Tasks/apigatewayusingjwttokens.htm#identityprovider).
 Instead, Teleport will trust the response from the Oracle Cloud API to know if
-it can trust the claims.
+it can trust the signature.
 
 ### Proto Specification
 
@@ -209,6 +218,15 @@ of agents with mixed versions is as follows:
 
 Add an entry to the test plan to verify that the Oracle join method works as
 described in the docs, just like the other join methods.
+
+### Future work
+
+Cluster admins with many Oracle Cloud compartments may wish to specify the
+allowed compartments to join from by their tags, rather than having to
+specify each by name/OCID. The `oracle` section of the provision token
+spec could be expended with the `compartment_tags` field to allow filtering
+by defined and/or freeform tags. Since Teleport would already fetch the compartment
+from the Oracle API, no extra permissions would be required.
 
 ## Appendix A: Sample JWT claims
 
