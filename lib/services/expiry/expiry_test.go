@@ -64,7 +64,7 @@ func TestExpiry(t *testing.T) {
 	pendingRequestGracePeriod = time.Second
 
 	go func() {
-		err := expiry.Start()
+		err := expiry.Run()
 		require.NoError(t, err)
 	}()
 

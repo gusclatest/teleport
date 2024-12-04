@@ -37,7 +37,7 @@ import (
 
 var (
 	// scanInterval is the interval at which the expiry checker scans for access requests
-	scanInterval = time.Minute * 5
+	scanInterval              = time.Minute * 5
 	pendingRequestGracePeriod = time.Second * 40
 )
 
@@ -101,9 +101,8 @@ func New(ctx context.Context, cfg *Config) (*Service, error) {
 	return s, nil
 }
 
-// Start starts the expiry service.
-func (s *Service) Start() error {
-
+// Run starts the expiry service.
+func (s *Service) Run() error {
 	semCfg := services.SemaphoreLockConfigWithRetry{
 		SemaphoreLockConfig: services.SemaphoreLockConfig{
 			Service: s.AccessPoint,
@@ -139,11 +138,13 @@ func (s *Service) Start() error {
 			semCfg,
 		)
 		if err != nil {
-			return trace.Wrap(err)
+			s.Log.WarnContext(s.ctx, "error aquiring semaphore", "error", err)
+			continue
 		}
 
-		s.processRequests()
-
+		if err := s.processRequests(); err != nil {
+			s.Log.WarnContext(s.ctx, "error processing access requests", "error", err)
+		}
 		ctx, cancel := context.WithCancel(lease)
 		defer cancel()
 		lease.Stop()
@@ -163,6 +164,7 @@ func (s *Service) processRequests() error {
 	for {
 		var page []*types.AccessRequestV3
 		var err error
+		readTime := s.Clock.Now()
 		page, nextPageStart, err = s.getNextPageOfAccessRequests(nextPageStart)
 		if err != nil {
 			return trace.Wrap(err)
@@ -172,7 +174,7 @@ func (s *Service) processRequests() error {
 		}
 		minPageDelay := time.After(retryutils.SeventhJitter(minPageDelay))
 		for _, req := range page {
-			if !s.shouldExpire(req) {
+			if !s.shouldExpire(req, readTime) {
 				continue
 			}
 			if err := s.expireRequest(s.ctx, req); err != nil {
@@ -202,12 +204,12 @@ func (s *Service) getNextPageOfAccessRequests(startKey string) ([]*types.AccessR
 	return resp.AccessRequests, resp.NextKey, nil
 }
 
-func (s *Service) shouldExpire(req types.AccessRequest) bool {
+func (s *Service) shouldExpire(req types.AccessRequest, readTime time.Time) bool {
 	expires := req.Expiry()
 	if req.GetState() == types.RequestState_PENDING {
 		expires = expires.Add(pendingRequestGracePeriod)
 	}
-	return s.Clock.Now().After(expires)
+	return readTime.After(expires)
 }
 
 func (s *Service) expireRequest(ctx context.Context, req types.AccessRequest) error {
