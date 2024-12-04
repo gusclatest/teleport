@@ -44,6 +44,16 @@ const TraceLevel = slog.LevelDebug - 1
 // TraceLevelText is the text representation of Trace verbosity.
 const TraceLevelText = "TRACE"
 
+// DiscardHandler is a [slog.Handler] that discards all messages. It
+// is more efficient than a [slog.Handler] which outputs to [io.Discard] since
+// it performs zero formatting.
+type DiscardHandler struct{}
+
+func (dh DiscardHandler) Enabled(context.Context, slog.Level) bool  { return false }
+func (dh DiscardHandler) Handle(context.Context, slog.Record) error { return nil }
+func (dh DiscardHandler) WithAttrs(attrs []slog.Attr) slog.Handler  { return dh }
+func (dh DiscardHandler) WithGroup(name string) slog.Handler        { return dh }
+
 // SlogTextHandler is a [slog.Handler] that outputs messages in a textual
 // manner as configured by the Teleport configuration.
 type SlogTextHandler struct {

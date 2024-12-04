@@ -22,6 +22,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"log/slog"
 	"net"
 	"os"
 	"strconv"
@@ -943,6 +944,15 @@ func (c *ServerContext) SendSubsystemResult(r SubsystemResult) {
 
 func (c *ServerContext) String() string {
 	return fmt.Sprintf("ServerContext(%v->%v, user=%v, id=%v)", c.ServerConn.RemoteAddr(), c.ServerConn.LocalAddr(), c.ServerConn.User(), c.id)
+}
+
+func (c *ServerContext) LogValue() slog.Value {
+	return slog.GroupValue(
+		slog.String("remote_addr", c.ServerConn.RemoteAddr().String()),
+		slog.String("local_addr", c.ServerConn.LocalAddr().String()),
+		slog.String("user", c.ServerConn.User()),
+		slog.Int("id", c.id),
+	)
 }
 
 func getPAMConfig(c *ServerContext) (*PAMConfig, error) {
