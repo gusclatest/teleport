@@ -1009,6 +1009,10 @@ message IdentityCenterPermissionSet {
 
   // Name is the human-readable name of the Permission Set.
   string Name = 2 [(gogoproto.jsontag) = "name,omitempty"];
+
+  // AssignmentName is the name of the account assignment that represents this
+  // permission set on the account enclosing this permission set
+  string AssignmentName = 3 [(gogoproto.jsontag) = "assignment_name,omitempty"];
 }
 
 // AppIdentityCenter encapsulates information about an AWS Identity Center
