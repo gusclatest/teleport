@@ -62,7 +62,24 @@ as an Access Enforcement Function in some literature.
 the action should be allowed, and any necessary information needed to correctly enforce limitations upon the action.
 
 - Permit: A single data structure encoding all necessary information for a PEP to correctly enforce a conditional/
-parameterized allow decision.
+parameterized allow decision. A permit is *not* a credential, and must not be persisted or reused outside of the
+context of the action about which the decision was made.
+
+- Denial: A data structure encoding all necessary information for a PEP to correctly enforce a deny decision. Typically
+this is just a message, but some denial cases may eventually trigger more complex flows (e.g. MFA).
+
+- Decision/Decision Response: A response from the PDP to a Decision Request, containing one of either a Permit or a Denial.
+
+### Non-Goals/Limitations
+
+- This proposal does not aim to make any teleport agent resilient to compromise of any control-plane element. Most notably,
+a compromised teleport PDP (typically the proxy) *will* be able to send malicious decisions to agents. Since proxies are already
+able to impersonate users (and auths can do *anything*) this isn't a regression, but it is worth calling out explicitly.
+
+- This proposal will effectively kill any remaining ability for teleport agents to continue to serve requests when proxies are
+unavailable. This is mostly already the case, but currently certain role configurations can allow direct dial teleport ssh agents
+to continue to be usable by using an openssh client to direct dial the agent even when the control-plane is entirely unavailable.
+This will no longer be the case.
 
 ### Overview
 
@@ -94,13 +111,18 @@ the agent-side teleport logic that previously would have worked with some combin
 take the appropriate permit structure as input. Permits will *always* be passed by pointer, not value, as a precaution against zero
 value bugs resulting in unintended access.
 
-- Methods will conventionally take the form `rpc Evaluate<Action>(<Action>Request) returns (<Action>Permit)`. For example,
-the method for evaluating server access would read `rpc EvaluateSSHAccess(SSHAccessRequest) returns (SSHAccessPermit)`.
-Note that this deviates somewhat from common PDP conventions in that we don't return a decision object wrapping the permit. Any result
-other than allow must be communicated as an error.
+- Decision Service methods will conventionally take the form `rpc Evaluate<Action>(Evaluate<Action>Request) returns (Evaluate<Action>Response)`.
+For example, the method for evaluating server access would read `rpc EvaluateSSHAccess(EvaluateSSHAccessRequest) returns (EvaluateSSHAccessResponse)`.
 
-- Common `RequestMetadata` and `PermitMetadata` types will be provided and should be included in the request and permit
-respectively. These types will contain common fields like teleport version of PDP/PEP, dry run flag, etc.
+- Response objects will contain a top-level `Decision` oneof field with `Permit` and `Denial` variants. The underlying permit/denial
+types will conventionally be named `<Action>Permit` and `<Action>Denial`.
+
+- Common `RequestMetadata`, `PermitMetadata`, and `DenialMetadata` types will be provided and should be included in all requests, permits,
+and denials. These types will contain common fields like teleport version of PDP/PEP, dry run flag, etc.
+
+- We will not generally try to write polymorphic abstractions over different request/decision/permit/denial types, but helpers will be
+provided for basic permit/denial control-flow. For example, a `decision.Unwrap` function will be provided that converts decision responses
+into the form `(Permit, error)` where `error` is a `trace.AccessDeniedError` built from the contents of the denial.
 
 - A standard `Resource` reference types with fields like  `kind` and `name` will be provided and should be prefered in
 those APIs where specifying individual resources or sets of resources is necessary. PDPs will use this reference to load
@@ -119,19 +141,26 @@ Here is a truncated example of the PDP API for server access:
 ```protobuf
 service DecisionService {
 
-  rpc EvaluateSSHAccess(SSHAccessRequest) returns (SSHAccessPermit);
+  rpc EvaluateSSHAccess(EvaluateSSHAccessRequest) returns (EvaluateSSHAccessResponse);
 
   // ...
 }
 
-message SSHAccessRequest {
+message EvaluateSSHAccessRequest {
   RequestMetadata metadata = 1;
 
-  SSHIdentity user = 2;
+  SSHIdentity identity = 2;
 
   Resource server = 3;
 
   string login = 4;
+}
+
+message EvaluateSSHAccessResponse {
+  oneof decision {
+    SSHAccessPermit permit = 1;
+    SSHAccessDenial denial = 2;
+  }
 }
 
 message SSHAccessPermit {
@@ -156,6 +185,12 @@ message SSHAccessPermit {
   int64 max_connections = 10;
 
   // ... (there's a lot more that needs to go here)
+}
+
+message SSHAccessDenial {
+  DenialMetadata metadata = 1;
+
+  // ... (this may eventually support MFA flows, etc.)
 }
 
 message SSHIdentity {
@@ -215,12 +250,42 @@ doesn't need to reimplement the same logic for the old model when backporting. T
 all major changes prior to a testplan so that we can get robust manual testing of all major features with the changes in
 place before backporting.
 
-To ensure that we've fully broken agent dependence on roles outside of the PDP, we will split the agent's local cache up
-s.t. all components other than the PDP will be statically prevented from accessing roles.
+To ensure that we've fully broken agent dependence on roles outside of the PDP, we will split the agent's local cache and api client
+up s.t. all components other than the PDP will be statically prevented from accessing roles.
 
 During this phase we will also implement tctl commands for directly invoking the DecisionService gRCP API on the control
-plane. This will provide a powerful debugging and auditing tool for superusers and developers who want deeper insight into how
-teleport makes decisions.
+plane. The exact syntax of these commands is TBD, but for simplicity we will try to mirror the grpc API as much as possible,
+with the noteable exceptions that we will provide means of shorthand reference to identities and resources.  Ex:
+
+```shell
+$ tctl decision-service evaluate-ssh-access --username=alice@example.com --login=root --server-id=ba4dbf31-cc42-4766-8474-efc6b70aec80 --format=json
+{
+  "Decision": {
+    "Permit": {
+      "metadata": {
+        "pdp_version": "v1.2.3"
+      },
+      "forward_agent": true,
+      "max_session_ttl": "1h",
+      "port_forwarding": true,
+      ...
+    }
+  }
+}
+
+$ tctl decision-service evaluate-ssh-access --username=alice@example.com --login=root --server-id=4681f1b8-54ef-45bb-a62f-2c5ab60a88b5 --format=json
+{
+  "Decision": {
+    "Denial": {
+      "metadata": {
+        "pdp_version": "v1.2.3",
+        "user_message": "access denied to server 4681f1b8-54ef-45bb-a62f-2c5ab60a88b5"
+      },
+      ...
+    }
+  }
+}
+```
 
 #### Relocate Phase
 
@@ -232,8 +297,8 @@ agent will call-back into the control plane to get a decision.
 We intend to open a second follow-up RFD when we are closer to the relocate phase in order to explore it in more detail, but the
 highlights are these:
 
-- Agent reverse tunnel protocols will need to be updated to allow a trusted and replay-resistant permit message to be sent from proxy to
-agent as part of an incoming dial.
+- Agent reverse tunnel and proxy peering protocols will need to be updated to allow a trusted and replay-resistant permit message to
+be sent from proxy to agent as part of an incoming dial.
 
 - The mechanism by which trusted cluster dials are performed will need to be reworked s.t. all routing decisions are made at
 the leaf proxy rather than the root proxy since access-control decisions will now get made as a part of routing. This will include
@@ -248,13 +313,6 @@ certificates. We may want to consider a mechanism for eliminating logins at the 
 only the target login at the proxy).
 
 ### Questions/Alternatives/Ongoing Research
-
-- We've gone back and forth a bit on whether to return bare permits s.t. the resulting client method returns `(*Permit, error)` or
-to use an enclosing response/decision message with a oneof for allow/deny cases. The former is more inline with how existing access
-control decisions are made and results in slightly cleaner code, but the latter may be useful if we ever decide to start doing more
-complex denial cases (e.g. for MFA flows or verbose denials for use by visualization tools). We're currently leaning toward bare
-permits since all the good arguments for enclosed responses are speculative at this point. One of the design goals of this system
-is to let us iterate faster, and that includes adding new methods with new conventions as the need arises.
 
 - Some protocols (e.g. k8s) don't map as cleanly to a single decision being made in advance at dial time. We are still looking into our
 options there and plans related to such protocols are subject to change. SSH being the most widely used protocol, and the protocol that
