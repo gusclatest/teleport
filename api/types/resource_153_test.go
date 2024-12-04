@@ -83,7 +83,8 @@ func TestResource153ToLegacy(t *testing.T) {
 
 	// Unwrap gives the underlying resource back.
 	t.Run("unwrap", func(t *testing.T) {
-		unwrapped := legacyResource.(interface{ Unwrap() types.Resource153 }).Unwrap()
+		unwrapper := types.Resource153Unwrapper(legacyResource)
+		unwrapped := unwrapper.Unwrap()
 		if diff := cmp.Diff(bot, unwrapped, protocmp.Transform()); diff != "" {
 			t.Errorf("Unwrap mismatch (-want +got)\n%s", diff)
 		}

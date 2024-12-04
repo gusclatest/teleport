@@ -18,11 +18,16 @@ package services
 
 import (
 	"context"
+	"fmt"
+	"strings"
 
-	"google.golang.org/protobuf/proto"
+	"github.com/gravitational/trace"
 	"google.golang.org/protobuf/types/known/emptypb"
 
 	identitycenterv1 "github.com/gravitational/teleport/api/gen/proto/go/teleport/identitycenter/v1"
+	"github.com/gravitational/teleport/api/types"
+	apiutils "github.com/gravitational/teleport/api/utils"
+	"github.com/gravitational/teleport/lib/utils"
 	"github.com/gravitational/teleport/lib/utils/pagination"
 )
 
@@ -49,10 +54,15 @@ type IdentityCenterAccount struct {
 }
 
 // CloneResource creates a deep copy of the underlying account resource
-func (a IdentityCenterAccount) CloneResource() IdentityCenterAccount {
+func (a IdentityCenterAccount) CloneResource() types.Resource153 {
 	return IdentityCenterAccount{
-		Account: proto.Clone(a.Account).(*identitycenterv1.Account),
+		Account: apiutils.CloneProtoMsg(a.Account),
 	}
+}
+
+// GetDisplayName returns a human-readable name for the account for UI display.
+func (a IdentityCenterAccount) GetDisplayName() string {
+	return a.Account.GetSpec().GetName()
 }
 
 // IdentityCenterAccountID is a strongly-typed Identity Center account ID.
@@ -179,9 +189,9 @@ type IdentityCenterAccountAssignment struct {
 }
 
 // CloneResource creates a deep copy of the underlying account resource
-func (a IdentityCenterAccountAssignment) CloneResource() IdentityCenterAccountAssignment {
+func (a IdentityCenterAccountAssignment) CloneResource() types.Resource153 {
 	return IdentityCenterAccountAssignment{
-		AccountAssignment: proto.Clone(a.AccountAssignment).(*identitycenterv1.AccountAssignment),
+		AccountAssignment: apiutils.CloneProtoMsg(a.AccountAssignment),
 	}
 }
 
@@ -225,4 +235,85 @@ type IdentityCenter interface {
 	IdentityCenterPermissionSets
 	IdentityCenterPrincipalAssignments
 	IdentityCenterAccountAssignments
+}
+
+// NewIdentityCenterAccountMatcher creates a new [IdentityCenterMatcher]
+// configured to match the supplied [IdentityCenterAccount].
+func NewIdentityCenterAccountMatcher(account IdentityCenterAccount) *IdentityCenterMatcher {
+	return &IdentityCenterMatcher{
+		accountID:        account.GetSpec().GetId(),
+		permissionSetARN: nil,
+	}
+}
+
+// NewIdentityCenterAccountAssignmentMatcher creates a new [IdentityCenterMatcher]
+// configured to match the supplied [IdentityCenterAccountAssignment].
+func NewIdentityCenterAccountAssignmentMatcher(account IdentityCenterAccountAssignment) *IdentityCenterMatcher {
+	psARN := account.GetSpec().GetPermissionSet().GetArn()
+	return &IdentityCenterMatcher{
+		accountID:        account.GetSpec().GetAccountId(),
+		permissionSetARN: &psARN,
+	}
+}
+
+// IdentityCenterMatcher implements a [RoleMatcher] for comparing Identity Center
+// resources against the AccountAssignments specified in a Role condition.
+//
+// The same type is used for matching both [IdentityCenterAccount]s and
+// [IdentityCenterAccountAssignment]s, the permission set is `nil` when matching
+// an Account.
+type IdentityCenterMatcher struct {
+	accountID        string
+	permissionSetARN *string
+}
+
+// Match implements RoleMatcher for IdentityCenterMatcher. It attempts to match
+// the Account Assignments in a Role Condition against a known Account ID or
+// (Account ID, PermissionSetARN) pair
+func (m *IdentityCenterMatcher) Match(role types.Role, condition types.RoleConditionType) (bool, error) {
+	for _, asmt := range role.GetIdentityCenterAccountAssignments(condition) {
+		accountMatches, err := m.matchExpression(m.accountID, asmt.Account)
+		if err != nil {
+			return false, trace.Wrap(err)
+		}
+
+		if !accountMatches {
+			continue
+		}
+
+		if m.permissionSetARN == nil {
+			return true, nil
+		}
+
+		psMatches, err := m.matchExpression(*(m.permissionSetARN), asmt.PermissionSet)
+		if err != nil {
+			return false, trace.Wrap(err)
+		}
+
+		if psMatches {
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
+func (m *IdentityCenterMatcher) matchExpression(target, accountExpression string) (bool, error) {
+	if accountExpression == types.Wildcard {
+		return true, nil
+	}
+	matches, err := utils.MatchString(target, accountExpression)
+	if err != nil {
+		return false, trace.Wrap(err)
+	}
+	return matches, nil
+}
+
+func (m *IdentityCenterMatcher) String() string {
+	var text strings.Builder
+	fmt.Fprintf(&text, "IdentityCenterMatcher(account==%v", m.accountID)
+	if m.permissionSetARN != nil {
+		fmt.Fprintf(&text, ", ps==%v", *(m.permissionSetARN))
+	}
+	text.WriteRune(')')
+	return text.String()
 }

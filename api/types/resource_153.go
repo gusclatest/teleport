@@ -18,9 +18,12 @@ import (
 	"encoding/json"
 	"time"
 
+	"google.golang.org/protobuf/protoadapt"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	headerv1 "github.com/gravitational/teleport/api/gen/proto/go/teleport/header/v1"
+	"github.com/gravitational/teleport/api/utils"
+	apiutils "github.com/gravitational/teleport/api/utils"
 )
 
 // ResourceMetadata is the smallest interface that defines a Teleport resource.
@@ -116,7 +119,8 @@ func (r *legacyToResource153Adapter) GetVersion() string {
 }
 
 // Resource153ToLegacy transforms an RFD 153 style resource into a legacy
-// [Resource] type.
+// [Resource] type. Implements [ResourceWithLabels] and CloneResource (where the)
+// wrapped resource supports cloning).
 //
 // Note that CheckAndSetDefaults is a noop for the returned resource and
 // SetSubKind is not implemented and panics on use.
@@ -130,6 +134,8 @@ type Resource153Unwrapper interface {
 	Unwrap() Resource153
 }
 
+// resource153ToLegacyAdapter wraps a new-style resource in a type implementing
+// the legacy resource interfaces
 type resource153ToLegacyAdapter struct {
 	inner Resource153
 }
@@ -211,4 +217,70 @@ func (r *resource153ToLegacyAdapter) SetRevision(rev string) {
 
 func (r *resource153ToLegacyAdapter) SetSubKind(subKind string) {
 	panic("interface Resource153 does not implement SetSubKind")
+}
+
+func (r *resource153ToLegacyAdapter) Origin() string {
+	m := r.inner.GetMetadata()
+	if m == nil {
+		return ""
+	}
+	return m.Labels[OriginLabel]
+}
+
+func (r *resource153ToLegacyAdapter) SetOrigin(origin string) {
+	m := r.inner.GetMetadata()
+	if m == nil {
+		return
+	}
+	m.Labels[OriginLabel] = origin
+}
+
+func (r *resource153ToLegacyAdapter) GetLabel(key string) (value string, ok bool) {
+	m := r.inner.GetMetadata()
+	if m == nil {
+		return "", false
+	}
+	value, ok = m.Labels[key]
+	return
+}
+
+func (r *resource153ToLegacyAdapter) GetAllLabels() map[string]string {
+	m := r.inner.GetMetadata()
+	if m == nil {
+		return nil
+	}
+	return m.Labels
+}
+
+func (r *resource153ToLegacyAdapter) GetStaticLabels() map[string]string {
+	return r.GetAllLabels()
+}
+
+func (r *resource153ToLegacyAdapter) SetStaticLabels(labels map[string]string) {
+	m := r.inner.GetMetadata()
+	if m == nil {
+		return
+	}
+	m.Labels = labels
+}
+
+func (r *resource153ToLegacyAdapter) MatchSearch(searchValues []string) bool {
+	fieldVals := append(utils.MapToStrings(r.GetAllLabels()), r.GetName())
+	return MatchSearch(fieldVals, searchValues, nil)
+}
+
+func (r *resource153ToLegacyAdapter) CloneResource() ResourceWithLabels {
+	switch clonable := r.inner.(type) {
+	case interface{ CloneResource() Resource153 }:
+		return &resource153ToLegacyAdapter{
+			inner: clonable.CloneResource(),
+		}
+
+	case protoadapt.MessageV1:
+		return &resource153ToLegacyAdapter{
+			inner: apiutils.CloneProtoMsg(clonable).(Resource153),
+		}
+	}
+
+	panic("interface Resource153 does not implement CloneResource for the wrapped type")
 }

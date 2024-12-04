@@ -2567,6 +2567,12 @@ func (set RoleSet) checkAccess(r AccessCheckable, traits wrappers.Traits, state 
 		return ErrSessionMFARequired
 	}
 
+	requiresLabelMatching := true
+	switch r.GetKind() {
+	case types.KindIdentityCenterAccount, types.KindIdentityCenterAccountAssignment:
+		requiresLabelMatching = false
+	}
+
 	namespace := types.ProcessNamespace(r.GetMetadata().Namespace)
 
 	// Additional message depending on kind of resource
@@ -2589,18 +2595,18 @@ func (set RoleSet) checkAccess(r AccessCheckable, traits wrappers.Traits, state 
 		if !matchNamespace {
 			continue
 		}
-
-		matchLabels, labelsMessage, err := checkRoleLabelsMatch(types.Deny, role, traits, r, isDebugEnabled)
-		if err != nil {
-			return trace.Wrap(err)
+		if requiresLabelMatching {
+			matchLabels, labelsMessage, err := checkRoleLabelsMatch(types.Deny, role, traits, r, isDebugEnabled)
+			if err != nil {
+				return trace.Wrap(err)
+			}
+			if matchLabels {
+				debugf("Access to %v %q denied, deny rule in role %q matched; match(namespace=%v, %s)",
+					r.GetKind(), r.GetName(), role.GetName(), namespaceMessage, labelsMessage)
+				return trace.AccessDenied("access to %v denied. User does not have permissions. %v",
+					r.GetKind(), additionalDeniedMessage)
+			}
 		}
-		if matchLabels {
-			debugf("Access to %v %q denied, deny rule in role %q matched; match(namespace=%v, %s)",
-				r.GetKind(), r.GetName(), role.GetName(), namespaceMessage, labelsMessage)
-			return trace.AccessDenied("access to %v denied. User does not have permissions. %v",
-				r.GetKind(), additionalDeniedMessage)
-		}
-
 		// Deny rules are greedy on purpose. They will always match if
 		// at least one of the matchers returns true.
 		matchMatchers, matchersMessage, err := RoleMatchers(matchers).MatchAny(role, types.Deny)
@@ -2634,19 +2640,20 @@ func (set RoleSet) checkAccess(r AccessCheckable, traits wrappers.Traits, state 
 			continue
 		}
 
-		matchLabels, labelsMessage, err := checkRoleLabelsMatch(types.Allow, role, traits, r, isDebugEnabled)
-		if err != nil {
-			return trace.Wrap(err)
-		}
-
-		if !matchLabels {
-			if isDebugEnabled {
-				errs = append(errs, trace.AccessDenied("role=%v, match(%s)",
-					role.GetName(), labelsMessage))
+		if requiresLabelMatching {
+			matchLabels, labelsMessage, err := checkRoleLabelsMatch(types.Allow, role, traits, r, isDebugEnabled)
+			if err != nil {
+				return trace.Wrap(err)
 			}
-			continue
-		}
 
+			if !matchLabels {
+				if isDebugEnabled {
+					errs = append(errs, trace.AccessDenied("role=%v, match(%s)",
+						role.GetName(), labelsMessage))
+				}
+				continue
+			}
+		}
 		// Allow rules are not greedy. They will match only if all of the
 		// matchers return true.
 		matchMatchers, err := RoleMatchers(matchers).MatchAll(role, types.Allow)
