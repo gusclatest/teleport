@@ -225,6 +225,7 @@ export const makeLoggedInUser = (
       delete: true,
       use: true,
     },
+    reviewRequests: true,
   },
   sshLogins: [],
   roles: [],

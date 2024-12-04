@@ -114,6 +114,7 @@ export default function RequestReview({
     <Validation>
       {({ validator }) => (
         <Box
+          data-testid="review_box"
           border="1px solid"
           borderColor="levels.sunken"
           mt={7}
